@@ -1,0 +1,68 @@
+{
+  "timestamp": "2025-09-27T14:06:58.458111",
+  "total_tests": 10,
+  "passed_tests": 9,
+  "success_rate": 90.0,
+  "test_results": [
+    {
+      "test": "Root API Endpoint",
+      "success": true,
+      "details": "",
+      "timestamp": "2025-09-27T14:06:34.939659"
+    },
+    {
+      "test": "Generate Demo Transactions",
+      "success": true,
+      "details": "",
+      "timestamp": "2025-09-27T14:06:34.980244"
+    },
+    {
+      "test": "Get Spending Summary",
+      "success": true,
+      "details": "",
+      "timestamp": "2025-09-27T14:06:35.059388"
+    },
+    {
+      "test": "Get Spending Trends",
+      "success": true,
+      "details": "",
+      "timestamp": "2025-09-27T14:06:36.455008"
+    },
+    {
+      "test": "Get User Transactions",
+      "success": true,
+      "details": "",
+      "timestamp": "2025-09-27T14:06:36.493998"
+    },
+    {
+      "test": "Create Transaction",
+      "success": true,
+      "details": "",
+      "timestamp": "2025-09-27T14:06:36.551263"
+    },
+    {
+      "test": "Generate AI Insights",
+      "success": true,
+      "details": "",
+      "timestamp": "2025-09-27T14:06:53.981118"
+    },
+    {
+      "test": "Get AI Insights",
+      "success": true,
+      "details": "",
+      "timestamp": "2025-09-27T14:06:56.036864"
+    },
+    {
+      "test": "Create UPI Payment Intent",
+      "success": true,
+      "details": "",
+      "timestamp": "2025-09-27T14:06:56.106290"
+    },
+    {
+      "test": "UPI Payment Callback",
+      "success": false,
+      "details": "Expected 200, got 500 - Internal Server Error",
+      "timestamp": "2025-09-27T14:06:58.457160"
+    }
+  ]
+}
