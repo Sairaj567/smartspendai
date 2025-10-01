@@ -9,7 +9,6 @@ from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 import uuid
 from datetime import datetime, timezone, timedelta
-from emergentintegrations.llm.chat import LlmChat, UserMessage
 import json
 import random
 
@@ -28,7 +27,6 @@ app = FastAPI()
 api_router = APIRouter(prefix="/api")
 
 # Gemini AI Chat setup
-gemini_api_key = os.environ.get('EMERGENT_LLM_KEY')
 
 # Models
 class Transaction(BaseModel):
