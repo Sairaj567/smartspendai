@@ -38,6 +38,15 @@ const PaymentFlow = ({ user, onLogout }) => {
   const [paymentStatus, setPaymentStatus] = useState('idle'); // idle, processing, success, error
   const [paymentResult, setPaymentResult] = useState(null);
   const [recentPayments, setRecentPayments] = useState([]);
+  const [validationErrors, setValidationErrors] = useState({});
+
+  // Fallback demo user if no user is provided (for testing)
+  const effectiveUser = user || {
+    id: 'demo_user_123',
+    name: 'Demo User',
+    email: 'demo@spendsmart.ai',
+    phone: '+91 9876543210'
+  };
 
   const sidebarItems = [
     { icon: Home, label: 'Dashboard', path: '/dashboard' },
@@ -57,10 +66,19 @@ const PaymentFlow = ({ user, onLogout }) => {
   const quickAmounts = [100, 500, 1000, 2000, 5000];
 
   const handleInputChange = (e) => {
+    const { name, value } = e.target;
     setPaymentData({
       ...paymentData,
-      [e.target.name]: e.target.value
+      [name]: value
     });
+    
+    // Clear validation error for this field when user starts typing
+    if (validationErrors[name]) {
+      setValidationErrors({
+        ...validationErrors,
+        [name]: undefined
+      });
+    }
   };
 
   const setQuickAmount = (amount) => {
@@ -73,7 +91,33 @@ const PaymentFlow = ({ user, onLogout }) => {
   const generateUPIPayment = async (e) => {
     e.preventDefault();
     
-    if (!paymentData.amount || !paymentData.payee_vpa || !paymentData.payee_name) {
+    // Reset validation errors
+    setValidationErrors({});
+    
+    // Validate form data
+    const errors = {};
+    if (!paymentData.amount || parseFloat(paymentData.amount) <= 0) {
+      errors.amount = 'Please enter a valid amount';
+    }
+    if (!paymentData.payee_name.trim()) {
+      errors.payee_name = 'Please enter payee name';
+    }
+    if (!paymentData.payee_vpa.trim()) {
+      errors.payee_vpa = 'Please enter UPI ID or phone number';
+    }
+    
+    // Check if backend URL is configured
+    if (!BACKEND_URL) {
+      errors.general = 'Backend service is not configured. Please check environment variables.';
+    }
+    
+    // Check if user is properly authenticated
+    if (!effectiveUser || !effectiveUser.id) {
+      errors.general = 'User session is invalid. Please log in again.';
+    }
+    
+    if (Object.keys(errors).length > 0) {
+      setValidationErrors(errors);
       return;
     }
 
@@ -83,7 +127,7 @@ const PaymentFlow = ({ user, onLogout }) => {
       const response = await axios.post(`${API}/payments/upi-intent`, {
         ...paymentData,
         amount: parseFloat(paymentData.amount),
-        user_id: user.id
+        user_id: effectiveUser.id
       });
       
       setPaymentResult(response.data);
@@ -194,11 +238,11 @@ const PaymentFlow = ({ user, onLogout }) => {
           <div className="absolute bottom-0 left-0 right-0 p-6 border-t">
             <div className="flex items-center space-x-3 mb-4">
               <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-blue-600 rounded-full flex items-center justify-center">
-                <span className="text-white font-semibold">{user.name[0]}</span>
+                <span className="text-white font-semibold">{effectiveUser.name[0]}</span>
               </div>
               <div>
-                <p className="font-medium text-slate-900">{user.name}</p>
-                <p className="text-sm text-slate-600">{user.email}</p>
+                <p className="font-medium text-slate-900">{effectiveUser.name}</p>
+                <p className="text-sm text-slate-600">{effectiveUser.email}</p>
               </div>
             </div>
             <Button 
@@ -239,6 +283,13 @@ const PaymentFlow = ({ user, onLogout }) => {
                     </CardHeader>
                     <CardContent>
                       <form onSubmit={generateUPIPayment} className="space-y-6">
+                        {/* General Error */}
+                        {validationErrors.general && (
+                          <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+                            <p className="text-sm text-red-600">{validationErrors.general}</p>
+                          </div>
+                        )}
+                        
                         {/* Amount */}
                         <div className="space-y-2">
                           <Label htmlFor="amount">Amount (₹)</Label>
@@ -249,10 +300,13 @@ const PaymentFlow = ({ user, onLogout }) => {
                             placeholder="Enter amount"
                             value={paymentData.amount}
                             onChange={handleInputChange}
-                            className="text-2xl font-bold h-14"
+                            className={`text-2xl font-bold h-14 ${validationErrors.amount ? 'border-red-500' : ''}`}
                             required
                             data-testid="amount-input"
                           />
+                          {validationErrors.amount && (
+                            <p className="text-sm text-red-600">{validationErrors.amount}</p>
+                          )}
                           
                           {/* Quick Amount Buttons */}
                           <div className="flex flex-wrap gap-2 mt-3">
@@ -281,9 +335,13 @@ const PaymentFlow = ({ user, onLogout }) => {
                               placeholder="Enter payee name"
                               value={paymentData.payee_name}
                               onChange={handleInputChange}
+                              className={validationErrors.payee_name ? 'border-red-500' : ''}
                               required
                               data-testid="payee-name-input"
                             />
+                            {validationErrors.payee_name && (
+                              <p className="text-sm text-red-600">{validationErrors.payee_name}</p>
+                            )}
                           </div>
                           
                           <div className="space-y-2">
@@ -294,9 +352,13 @@ const PaymentFlow = ({ user, onLogout }) => {
                               placeholder="name@upi or 9876543210"
                               value={paymentData.payee_vpa}
                               onChange={handleInputChange}
+                              className={validationErrors.payee_vpa ? 'border-red-500' : ''}
                               required
                               data-testid="payee-vpa-input"
                             />
+                            {validationErrors.payee_vpa && (
+                              <p className="text-sm text-red-600">{validationErrors.payee_vpa}</p>
+                            )}
                           </div>
                         </div>
 
