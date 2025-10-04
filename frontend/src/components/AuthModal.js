@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,6 +16,14 @@ const AuthModal = ({ isOpen, onClose, onLogin }) => {
     password: ''
   });
 
+  // Reset form whenever modal closes
+  useEffect(() => {
+    if (!isOpen) {
+      setFormData({ name: '', email: '', phone: '', password: '' });
+      setIsLoading(false);
+    }
+  }, [isOpen]);
+
   const handleInputChange = (e) => {
     setFormData({
       ...formData,
@@ -23,26 +31,24 @@ const AuthModal = ({ isOpen, onClose, onLogin }) => {
     });
   };
 
+  // Helper to derive name from email if not provided
+  const deriveName = () => {
+    if (formData.name && formData.name.trim()) return formData.name.trim();
+    if (formData.email && formData.email.includes('@')) {
+      const local = formData.email.split('@')[0];
+      const words = local.replace(/[._+\-]/g, ' ').split(/\s+/).filter(Boolean);
+      const title = words.map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+      return title || 'User';
+    }
+    return 'User';
+  };
+
+  // Login handler
   const handleLogin = async (e) => {
     e.preventDefault();
     setIsLoading(true);
-    
-    // Simulate login - in real app, this would be an API call
-    setTimeout(() => {
-      // Prefer an explicitly entered name. If missing, derive from email (part before @) and
-      // make it human-friendly: replace separators with spaces and title-case each word.
-      const deriveName = () => {
-        if (formData.name && formData.name.trim()) return formData.name.trim();
-        if (formData.email && formData.email.includes('@')) {
-          const local = formData.email.split('@')[0];
-+n          // replace common separators with space, split words, capitalize each
-          const words = local.replace(/[._+\-]/g, ' ').split(/\s+/).filter(Boolean);
-          const title = words.map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-          return title || 'User';
-        }
-        return 'User';
-      };
 
+    setTimeout(() => {
       const userData = {
         id: `user_${Date.now()}`,
         name: deriveName(),
@@ -54,6 +60,25 @@ const AuthModal = ({ isOpen, onClose, onLogin }) => {
     }, 1500);
   };
 
+  // Signup handler
+  const handleSignup = async (e) => {
+    e.preventDefault();
+    setIsLoading(true);
+
+    setTimeout(() => {
+      const userData = {
+        id: `user_${Date.now()}`,
+        name: deriveName(),
+        email: formData.email || '',
+        phone: formData.phone || ''
+      };
+      // Could call onSignup instead, for now reuse onLogin
+      onLogin(userData);
+      setIsLoading(false);
+    }, 1500);
+  };
+
+  // Demo login
   const handleDemoLogin = () => {
     const demoUser = {
       id: 'demo_user_123',
@@ -81,7 +106,8 @@ const AuthModal = ({ isOpen, onClose, onLogin }) => {
             <TabsTrigger value="login">Login</TabsTrigger>
             <TabsTrigger value="signup">Sign Up</TabsTrigger>
           </TabsList>
-          
+
+          {/* Login Tab */}
           <TabsContent value="login">
             <Card className="border-0 shadow-none">
               <CardHeader className="text-center pb-4">
@@ -108,7 +134,7 @@ const AuthModal = ({ isOpen, onClose, onLogin }) => {
                       />
                     </div>
                   </div>
-                  
+
                   <div className="space-y-2">
                     <Label htmlFor="login-password">Password</Label>
                     <div className="relative">
@@ -125,7 +151,7 @@ const AuthModal = ({ isOpen, onClose, onLogin }) => {
                       />
                     </div>
                   </div>
-                  
+
                   <Button 
                     type="submit" 
                     className="w-full bg-gradient-to-r from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800" 
@@ -142,7 +168,7 @@ const AuthModal = ({ isOpen, onClose, onLogin }) => {
                     )}
                   </Button>
                 </form>
-                
+
                 <div className="relative">
                   <div className="absolute inset-0 flex items-center">
                     <span className="w-full border-t" />
@@ -151,7 +177,7 @@ const AuthModal = ({ isOpen, onClose, onLogin }) => {
                     <span className="bg-white px-2 text-slate-500">Or</span>
                   </div>
                 </div>
-                
+
                 <Button 
                   onClick={handleDemoLogin}
                   variant="outline" 
@@ -163,7 +189,8 @@ const AuthModal = ({ isOpen, onClose, onLogin }) => {
               </CardContent>
             </Card>
           </TabsContent>
-          
+
+          {/* Signup Tab */}
           <TabsContent value="signup">
             <Card className="border-0 shadow-none">
               <CardHeader className="text-center pb-4">
@@ -173,7 +200,7 @@ const AuthModal = ({ isOpen, onClose, onLogin }) => {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <form onSubmit={handleLogin} className="space-y-4">
+                <form onSubmit={handleSignup} className="space-y-4">
                   <div className="space-y-2">
                     <Label htmlFor="signup-name">Full Name</Label>
                     <div className="relative">
@@ -190,7 +217,7 @@ const AuthModal = ({ isOpen, onClose, onLogin }) => {
                       />
                     </div>
                   </div>
-                  
+
                   <div className="space-y-2">
                     <Label htmlFor="signup-email">Email</Label>
                     <div className="relative">
@@ -207,7 +234,7 @@ const AuthModal = ({ isOpen, onClose, onLogin }) => {
                       />
                     </div>
                   </div>
-                  
+
                   <div className="space-y-2">
                     <Label htmlFor="signup-phone">Phone Number</Label>
                     <div className="relative">
@@ -224,7 +251,7 @@ const AuthModal = ({ isOpen, onClose, onLogin }) => {
                       />
                     </div>
                   </div>
-                  
+
                   <div className="space-y-2">
                     <Label htmlFor="signup-password">Password</Label>
                     <div className="relative">
@@ -241,7 +268,7 @@ const AuthModal = ({ isOpen, onClose, onLogin }) => {
                       />
                     </div>
                   </div>
-                  
+
                   <Button 
                     type="submit" 
                     className="w-full bg-gradient-to-r from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800" 
@@ -258,7 +285,7 @@ const AuthModal = ({ isOpen, onClose, onLogin }) => {
                     )}
                   </Button>
                 </form>
-                
+
                 <div className="relative">
                   <div className="absolute inset-0 flex items-center">
                     <span className="w-full border-t" />
@@ -267,7 +294,7 @@ const AuthModal = ({ isOpen, onClose, onLogin }) => {
                     <span className="bg-white px-2 text-slate-500">Or</span>
                   </div>
                 </div>
-                
+
                 <Button 
                   onClick={handleDemoLogin}
                   variant="outline" 
