@@ -8,7 +8,10 @@ from fastapi import APIRouter, File, HTTPException, UploadFile
 from ..config import logger
 from ..database import get_database
 from ..models import ImportResult, Transaction, TransactionCreate
-from ..services.transactions import generate_mock_transactions
+from ..services.openrouter_classifier import (
+    classify_transaction_via_openrouter,
+    enrich_transactions_with_ai,
+)
 from ..utils import parse_csv_transactions, parse_from_mongo, prepare_for_mongo
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
@@ -16,14 +19,41 @@ router = APIRouter(prefix="/transactions", tags=["transactions"])
 db = get_database()
 
 
+def _model_dump(model):
+    dump = getattr(model, "model_dump", None)
+    if callable(dump):
+        return dump()
+    return model.dict()
+
+
+def _model_copy(model, *, update):
+    copier = getattr(model, "model_copy", None)
+    if callable(copier):
+        return copier(update=update)
+    return model.copy(update=update)
+
+
 @router.post("/", response_model=Transaction)
 async def create_transaction(transaction: TransactionCreate) -> Transaction:
-    transaction_dict = transaction.dict()
+    transaction_dict = _model_dump(transaction)
     transaction_dict['date'] = datetime.now(timezone.utc)
     transaction_obj = Transaction(**transaction_dict)
 
     try:
-        prepared_data = prepare_for_mongo(transaction_obj.dict())
+        ai_category = await classify_transaction_via_openrouter(
+            description=transaction_obj.description,
+            merchant=transaction_obj.merchant,
+            amount=transaction_obj.amount,
+            transaction_type=transaction_obj.type,
+            current_category=transaction_obj.category,
+        )
+        if ai_category:
+            transaction_obj = _model_copy(transaction_obj, update={"category": ai_category})
+    except Exception as exc:  # pragma: no cover - defensive logging
+        logger.warning("AI classification failed during create_transaction: %s", exc)
+
+    try:
+        prepared_data = prepare_for_mongo(_model_dump(transaction_obj))
         await db.transactions.insert_one(prepared_data)
     except Exception as exc:
         logger.exception("Failed to create transaction")
@@ -59,6 +89,11 @@ async def import_transactions(user_id: str, file: UploadFile = File(...), skip_d
             dataframe = pd.read_excel(io.BytesIO(content))
             csv_content = dataframe.to_csv(index=False)
             transactions, errors = parse_csv_transactions(csv_content, user_id)
+
+        try:
+            await enrich_transactions_with_ai(transactions, allow_override=False)
+        except Exception as ai_exc:  # pragma: no cover - defensive logging
+            logger.warning("AI enrichment skipped during import: %s", ai_exc)
     except HTTPException:
         raise
     except Exception as exc:
@@ -93,7 +128,7 @@ async def import_transactions(user_id: str, file: UploadFile = File(...), skip_d
 
     try:
         if unique_transactions:
-            prepared_transactions = [prepare_for_mongo(tx.dict()) for tx in unique_transactions]
+            prepared_transactions = [prepare_for_mongo(_model_dump(tx)) for tx in unique_transactions]
             await db.transactions.insert_many(prepared_transactions)
             successful_imports = len(unique_transactions)
     except Exception as exc:

@@ -87,7 +87,7 @@ The backend endpoint is available at `POST /api/transactions/import/{user_id}` a
 
 ### AI-Powered Categorization
 
-When an OpenRouter API key is configured, SmartSpendAI upgrades "Others" or "Auto" categories using an LLM-backed classifier. The importer batches asynchronous calls and caches results for a day to control latency. You can disable the behaviour per request by setting `auto_categorize=false` on `POST /api/transactions/import/{user_id}` or when creating a single transaction with `POST /api/transactions/`.
+When an OpenRouter API key is configured, SmartSpendAI upgrades "Others" or "Auto" categories using an LLM-backed classifier. Both the bulk importer and the single-transaction endpoint now invoke the classifier automatically after the rule-based heuristics run, so manual entries are refined the same way as file uploads. The importer batches asynchronous calls and caches results for a day to control latency. To fall back to heuristic-only categorisation, simply omit the OpenRouter credentials from your environment.
 
 ## Testing the Import API
 
