@@ -1,5 +1,11 @@
+import json
 from math import floor
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
+
+import httpx
+
+from ..config import get_settings, logger
+from .openrouter_classifier import openrouter_available
 
 
 _TIMEFRAME_MONTH_MAP = {
@@ -11,6 +17,10 @@ _TIMEFRAME_MONTH_MAP = {
     "65_days": 2,
 }
 
+_MAX_INSIGHTS = 6
+_DEFAULT_PRIORITY = "medium"
+_VALID_PRIORITIES = {"low", "medium", "high"}
+
 
 def _round_to_step(amount: float, step: int = 500) -> float:
     if amount <= 0:
@@ -19,15 +29,29 @@ def _round_to_step(amount: float, step: int = 500) -> float:
     return max(step, rounded)
 
 
-def generate_spending_insights(
+async def generate_spending_insights(
     summary: Dict,
     trends: Dict,
     user_id: str,
     timeframe: str,
     timeframe_label: Optional[str] = None,
 ) -> List[Dict]:
-    insights: List[Dict] = []
+    metrics = _compute_financial_metrics(summary, trends, timeframe, timeframe_label)
 
+    if openrouter_available():
+        llm_insights = await _generate_llm_insights(summary, trends, metrics, user_id, timeframe)
+        if llm_insights:
+            return llm_insights[:_MAX_INSIGHTS]
+
+    return _generate_rule_based_insights(summary, metrics)
+
+
+def _compute_financial_metrics(
+    summary: Dict,
+    trends: Dict,
+    timeframe: str,
+    timeframe_label: Optional[str] = None,
+) -> Dict[str, Any]:
     total_expenses = summary.get('total_expenses', 0)
     total_income = summary.get('total_income', 0)
     net_savings = summary.get('net_savings', 0)
@@ -35,8 +59,12 @@ def generate_spending_insights(
     avg_daily_spending = trends.get('average_daily_spending', 0)
     savings_rate = (net_savings / total_income) * 100 if total_income else 0
 
-    timeframe_label = timeframe_label or timeframe.replace('_', ' ').title()
-    months_in_window = _TIMEFRAME_MONTH_MAP.get(timeframe, max(1, round(len(trends.get('trends', [])) / 30) or 1))
+    resolved_timeframe_label = timeframe_label or timeframe.replace('_', ' ').title()
+    trends_list = trends.get('trends', [])
+    months_in_window = _TIMEFRAME_MONTH_MAP.get(
+        timeframe,
+        max(1, round(len(trends_list) / 30) or 1)
+    )
     avg_monthly_income = total_income / months_in_window if months_in_window else total_income
     avg_monthly_expenses = total_expenses / months_in_window if months_in_window else total_expenses
     monthly_surplus = max(0, net_savings / months_in_window if months_in_window else net_savings)
@@ -47,6 +75,178 @@ def generate_spending_insights(
         if total_expenses
         else 0
     )
+
+    return {
+        "timeframe": timeframe,
+        "timeframe_label": resolved_timeframe_label,
+        "months_in_window": months_in_window,
+        "total_expenses": total_expenses,
+        "total_income": total_income,
+        "net_savings": net_savings,
+        "top_categories": top_categories,
+        "avg_daily_spending": avg_daily_spending,
+        "savings_rate": savings_rate,
+        "avg_monthly_income": avg_monthly_income,
+        "avg_monthly_expenses": avg_monthly_expenses,
+        "monthly_surplus": monthly_surplus,
+        "investment_snapshot": investment_snapshot,
+        "invested_amount": invested_amount,
+        "investment_percentage": investment_percentage,
+        "trends": trends_list,
+    }
+
+
+async def _generate_llm_insights(
+    summary: Dict,
+    trends: Dict,
+    metrics: Dict[str, Any],
+    user_id: str,
+    timeframe: str,
+) -> List[Dict[str, Any]]:
+    settings = get_settings()
+
+    headers = {
+        "Authorization": f"Bearer {settings.openrouter_api_key}",
+        "Content-Type": "application/json",
+    }
+
+    if settings.openrouter_app_url:
+        headers["HTTP-Referer"] = settings.openrouter_app_url
+    if settings.openrouter_app_name:
+        headers["X-Title"] = settings.openrouter_app_name
+
+    context = {
+        "user_id": user_id,
+        "timeframe": timeframe,
+        "timeframe_label": metrics["timeframe_label"],
+        "summary": summary,
+        "derived_metrics": {
+            "total_expenses": metrics["total_expenses"],
+            "total_income": metrics["total_income"],
+            "net_savings": metrics["net_savings"],
+            "savings_rate": round(metrics["savings_rate"], 2),
+            "monthly_surplus": round(metrics["monthly_surplus"], 2),
+            "avg_daily_spending": metrics["avg_daily_spending"],
+            "investment_percentage": metrics["investment_percentage"],
+        },
+        "top_categories": metrics["top_categories"],
+        "trends": {
+            "average_daily_spending": trends.get('average_daily_spending', 0),
+            "recent_daily_totals": trends.get('trends', [])[-30:],
+        },
+    }
+
+    user_prompt = (
+        "You are a certified financial planner for Indian professionals. "
+        "Review the analytics context and produce up to six personalised spending insights. "
+        "Each insight must be a JSON object with fields: title, description, recommendation, priority, category. "
+        "Priorities must be one of: low, medium, high. "
+        "Categories should be short slugs like savings, investment, budgeting, optimization, spending, general. "
+        "Focus on actionable advice grounded in the provided numbers. "
+        "Respond ONLY with a JSON array (no prose)."
+    )
+
+    payload = {
+        "model": settings.openrouter_model,
+        "temperature": 0.3,
+        "messages": [
+            {
+                "role": "system",
+                "content": user_prompt,
+            },
+            {
+                "role": "user",
+                "content": json.dumps(context, ensure_ascii=False, indent=2),
+            },
+        ],
+    }
+
+    try:
+        async with httpx.AsyncClient(base_url=settings.openrouter_base_url, timeout=settings.openrouter_timeout) as client:
+            response = await client.post("/chat/completions", headers=headers, json=payload)
+            response.raise_for_status()
+    except httpx.HTTPError as exc:
+        logger.warning("OpenRouter insight generation failed: %s", exc)
+        return []
+
+    try:
+        data = response.json()
+        choices = data.get("choices", [])
+        if not choices:
+            return []
+        content = choices[0]["message"].get("content", "")
+    except (ValueError, KeyError, TypeError) as exc:
+        logger.warning("Unexpected OpenRouter insight response: %s", exc)
+        return []
+
+    return _parse_llm_content(content)
+
+
+def _parse_llm_content(content: str) -> List[Dict[str, Any]]:
+    if not content:
+        return []
+
+    text = content.strip()
+    if text.startswith("```"):
+        lines = text.splitlines()
+        # remove first and last fence if present
+        if lines:
+            lines = [line for line in lines if not line.strip().startswith("```")]
+        text = "\n".join(lines).strip()
+
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        logger.info("OpenRouter insight payload not valid JSON")
+        return []
+
+    if isinstance(parsed, dict):
+        parsed = parsed.get("insights") or [parsed]
+
+    if not isinstance(parsed, list):
+        return []
+
+    insights: List[Dict[str, Any]] = []
+    for item in parsed:
+        if not isinstance(item, dict):
+            continue
+
+        title = str(item.get("title", "")).strip() or "Personalised Financial Insight"
+        description = str(item.get("description", "")).strip() or "Insight generated from your recent spending patterns."
+        recommendation = str(item.get("recommendation", "")).strip() or "Review your cash flow and adjust according to the recommendation."
+        priority = str(item.get("priority", _DEFAULT_PRIORITY)).strip().lower()
+        if priority not in _VALID_PRIORITIES:
+            priority = _DEFAULT_PRIORITY
+        category = str(item.get("category", "general")).strip() or "general"
+
+        insights.append({
+            "title": title,
+            "description": description,
+            "recommendation": recommendation,
+            "priority": priority,
+            "category": category.lower(),
+        })
+
+    return insights
+
+
+def _generate_rule_based_insights(summary: Dict, metrics: Dict[str, Any]) -> List[Dict]:
+    insights: List[Dict] = []
+
+    total_expenses = metrics['total_expenses']
+    total_income = metrics['total_income']
+    net_savings = metrics['net_savings']
+    top_categories = metrics['top_categories']
+    avg_daily_spending = metrics['avg_daily_spending']
+    savings_rate = metrics['savings_rate']
+    timeframe_label = metrics['timeframe_label']
+    months_in_window = metrics['months_in_window']
+    avg_monthly_income = metrics['avg_monthly_income']
+    avg_monthly_expenses = metrics['avg_monthly_expenses']
+    monthly_surplus = metrics['monthly_surplus']
+    investment_snapshot = metrics['investment_snapshot']
+    invested_amount = metrics['invested_amount']
+    investment_percentage = metrics['investment_percentage']
 
     if total_income > 0:
         savings_rate = (net_savings / total_income) * 100
@@ -186,4 +386,4 @@ def generate_spending_insights(
             "category": "general"
         })
 
-    return insights[:6]
+    return insights[:_MAX_INSIGHTS]

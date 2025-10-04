@@ -27,6 +27,21 @@ class TransactionCreate(BaseModel):
     type: str = 'expense'
     payment_method: str = 'UPI'
     location: Optional[str] = None
+    date: Optional[datetime] = None
+
+
+class BulkTransactionCreateRequest(BaseModel):
+    transactions: List[TransactionCreate]
+    skip_duplicates: bool = True
+
+
+class BulkTransactionResult(BaseModel):
+    total_requested: int
+    created_count: int
+    skipped_duplicates: int
+    failed_count: int
+    errors: List[str] = Field(default_factory=list)
+    created_transactions: List[Transaction] = Field(default_factory=list)
 
 
 class BudgetAlert(BaseModel):

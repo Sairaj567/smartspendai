@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import List, Optional, Union
 
 import io
 import pandas as pd
@@ -7,7 +7,13 @@ from fastapi import APIRouter, File, HTTPException, UploadFile
 
 from ..config import logger
 from ..database import get_database
-from ..models import ImportResult, Transaction, TransactionCreate
+from ..models import (
+    BulkTransactionCreateRequest,
+    BulkTransactionResult,
+    ImportResult,
+    Transaction,
+    TransactionCreate,
+)
 from ..services.openrouter_classifier import (
     classify_transaction_via_openrouter,
     enrich_transactions_with_ai,
@@ -38,30 +44,124 @@ def _model_copy(model, *, update):
     return model.copy(update=update)
 
 
-@router.post("/", response_model=Transaction)
-async def create_transaction(transaction: TransactionCreate) -> Transaction:
+async def _build_transaction_from_input(transaction: TransactionCreate) -> Transaction:
     transaction_dict = _model_dump(transaction)
-    transaction_dict['date'] = datetime.now(timezone.utc)
-    transaction_dict['category'] = normalize_investment_category(
-        transaction_dict.get('category'),
+    transaction_dict['date'] = transaction_dict.get('date') or datetime.now(timezone.utc)
+
+    ai_category: Optional[str] = None
+    try:
+        ai_category = await classify_transaction_via_openrouter(
+            description=transaction_dict.get('description'),
+            merchant=transaction_dict.get('merchant'),
+            amount=transaction_dict.get('amount'),
+            transaction_type=transaction_dict.get('type'),
+            current_category=transaction_dict.get('category'),
+            allow_override=True,
+        )
+    except Exception as exc:  # pragma: no cover - defensive logging
+        logger.warning("AI classification failed while preparing transaction: %s", exc)
+
+    raw_category = transaction_dict.get('category')
+    if isinstance(raw_category, str):
+        raw_category = raw_category.strip()
+    else:
+        raw_category = None
+
+    candidate_category = ai_category or raw_category or 'Others'
+    normalized_candidate = normalize_investment_category(
+        candidate_category,
         transaction_dict.get('description'),
         transaction_dict.get('merchant'),
         transaction_dict.get('type'),
     )
-    transaction_obj = Transaction(**transaction_dict)
 
-    try:
-        ai_category = await classify_transaction_via_openrouter(
-            description=transaction_obj.description,
-            merchant=transaction_obj.merchant,
-            amount=transaction_obj.amount,
-            transaction_type=transaction_obj.type,
-            current_category=transaction_obj.category,
-        )
-        if ai_category:
-            transaction_obj = _model_copy(transaction_obj, update={"category": ai_category})
-    except Exception as exc:  # pragma: no cover - defensive logging
-        logger.warning("AI classification failed during create_transaction: %s", exc)
+    if ai_category and normalized_candidate.lower() != 'investments':
+        transaction_dict['category'] = ai_category
+    else:
+        transaction_dict['category'] = normalized_candidate
+
+    return Transaction(**transaction_dict)
+
+
+async def _execute_bulk_create(
+    transaction_inputs: List[TransactionCreate],
+    *,
+    skip_duplicates: bool = True,
+) -> BulkTransactionResult:
+    prepared_transactions: List[Transaction] = []
+    errors: List[str] = []
+
+    for index, transaction_input in enumerate(transaction_inputs, start=1):
+        try:
+            prepared_transactions.append(await _build_transaction_from_input(transaction_input))
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.exception("Failed to prepare transaction %s during bulk create", index)
+            errors.append(f"Transaction {index}: {exc}")
+
+    skipped_duplicates = 0
+    transactions_to_insert: List[Transaction] = []
+
+    if skip_duplicates:
+        for transaction in prepared_transactions:
+            try:
+                existing = await db.transactions.find_one({
+                    "user_id": transaction.user_id,
+                    "amount": transaction.amount,
+                    "date": transaction.date.isoformat(),
+                    "description": transaction.description,
+                })
+            except Exception as exc:  # pragma: no cover - defensive logging
+                logger.warning("Duplicate check failed during bulk create: %s", exc)
+                existing = None
+
+            if existing:
+                skipped_duplicates += 1
+            else:
+                transactions_to_insert.append(transaction)
+    else:
+        transactions_to_insert = prepared_transactions
+
+    created_count = 0
+    inserted_transactions: List[Transaction] = []
+    if transactions_to_insert:
+        try:
+            prepared_payload = [prepare_for_mongo(_model_dump(tx)) for tx in transactions_to_insert]
+            await db.transactions.insert_many(prepared_payload)
+            created_count = len(transactions_to_insert)
+            inserted_transactions = transactions_to_insert
+        except Exception as exc:
+            logger.exception("Failed to insert bulk transactions")
+            errors.append("Database error during bulk insert")
+            created_count = 0
+            inserted_transactions = []
+
+    failed_count = max(0, len(transaction_inputs) - created_count - skipped_duplicates)
+
+    return BulkTransactionResult(
+        total_requested=len(transaction_inputs),
+        created_count=created_count,
+        skipped_duplicates=skipped_duplicates,
+        failed_count=failed_count,
+        errors=errors,
+        created_transactions=inserted_transactions[:10],
+    )
+
+
+@router.post("/", response_model=Union[Transaction, BulkTransactionResult])
+async def create_transaction(
+    payload: Union[TransactionCreate, BulkTransactionCreateRequest, List[TransactionCreate]]
+):
+    if isinstance(payload, list):
+        if not payload:
+            raise HTTPException(status_code=400, detail="No transactions supplied")
+        return await _execute_bulk_create(payload, skip_duplicates=True)
+
+    if isinstance(payload, BulkTransactionCreateRequest):
+        if not payload.transactions:
+            raise HTTPException(status_code=400, detail="No transactions supplied")
+        return await _execute_bulk_create(payload.transactions, skip_duplicates=payload.skip_duplicates)
+
+    transaction_obj = await _build_transaction_from_input(payload)
 
     try:
         prepared_data = prepare_for_mongo(_model_dump(transaction_obj))
@@ -115,7 +215,7 @@ async def import_transactions(user_id: str, file: UploadFile = File(...), skip_d
             transactions, errors = parse_csv_transactions(csv_content, user_id)
 
         try:
-            await enrich_transactions_with_ai(transactions, allow_override=False)
+            await enrich_transactions_with_ai(transactions, allow_override=True)
         except Exception as ai_exc:  # pragma: no cover - defensive logging
             logger.warning("AI enrichment skipped during import: %s", ai_exc)
     except HTTPException:
@@ -170,6 +270,68 @@ async def import_transactions(user_id: str, file: UploadFile = File(...), skip_d
         errors=errors,
         duplicate_count=duplicate_count,
         imported_transactions=unique_transactions[:10]
+    )
+
+
+@router.post("/bulk", response_model=BulkTransactionResult)
+async def bulk_create_transactions(payload: BulkTransactionCreateRequest) -> BulkTransactionResult:
+    if not payload.transactions:
+        raise HTTPException(status_code=400, detail="No transactions supplied")
+
+    prepared_transactions: List[Transaction] = []
+    errors: List[str] = []
+
+    for index, transaction_input in enumerate(payload.transactions, start=1):
+        try:
+            prepared_transactions.append(await _build_transaction_from_input(transaction_input))
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.exception("Failed to prepare transaction %s during bulk create", index)
+            errors.append(f"Transaction {index}: {str(exc)}")
+
+    skipped_duplicates = 0
+    transactions_to_insert: List[Transaction] = []
+
+    if payload.skip_duplicates:
+        for transaction in prepared_transactions:
+            try:
+                existing = await db.transactions.find_one({
+                    "user_id": transaction.user_id,
+                    "amount": transaction.amount,
+                    "date": transaction.date.isoformat(),
+                    "description": transaction.description,
+                })
+            except Exception as exc:  # pragma: no cover - defensive logging
+                logger.warning("Duplicate check failed during bulk create: %s", exc)
+                existing = None
+
+            if existing:
+                skipped_duplicates += 1
+            else:
+                transactions_to_insert.append(transaction)
+    else:
+        transactions_to_insert = prepared_transactions
+
+    created_count = 0
+    if transactions_to_insert:
+        try:
+            prepared_payload = [prepare_for_mongo(_model_dump(tx)) for tx in transactions_to_insert]
+            await db.transactions.insert_many(prepared_payload)
+            created_count = len(transactions_to_insert)
+        except Exception as exc:
+            logger.exception("Failed to insert bulk transactions")
+            errors.append("Database error during bulk insert")
+            created_count = 0
+            transactions_to_insert = []
+
+    failed_count = max(0, len(payload.transactions) - created_count - skipped_duplicates)
+
+    return BulkTransactionResult(
+        total_requested=len(payload.transactions),
+        created_count=created_count,
+        skipped_duplicates=skipped_duplicates,
+        failed_count=failed_count,
+        errors=errors,
+        created_transactions=transactions_to_insert[:10],
     )
 
 #a special commit for alok

@@ -32,7 +32,7 @@ async def create_ai_insights(user_id: str, timeframe: str = DEFAULT_TIMEFRAME):
             start_date=window["start"],
             end_date=window["inclusive_end"],
         )
-        raw_insights = generate_spending_insights(
+        raw_insights = await generate_spending_insights(
             summary,
             trends,
             user_id,
