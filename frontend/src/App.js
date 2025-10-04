@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import axios from 'axios';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import '@/App.css';
 
 // Components
@@ -13,14 +12,21 @@ import ImportTransactions from './components/ImportTransactions';
 import LandingPage from './components/LandingPage';
 import AuthModal from './components/AuthModal';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || "http://localhost:5000";
 const API = `${BACKEND_URL}/api`;
+
+// ProtectedRoute wrapper
+const ProtectedRoute = ({ element: Component, isAuthenticated, ...rest }) => {
+  return isAuthenticated ? <Component {...rest} /> : <Navigate to="/" replace />;
+};
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [showAuth, setShowAuth] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  const navigate = useNavigate();
 
   useEffect(() => {
     // Check if user is already logged in
@@ -37,12 +43,14 @@ function App() {
     setIsAuthenticated(true);
     setShowAuth(false);
     localStorage.setItem('spendsmart_user', JSON.stringify(userData));
+    navigate('/dashboard'); // go straight to dashboard after login
   };
 
   const handleLogout = () => {
     setCurrentUser(null);
     setIsAuthenticated(false);
     localStorage.removeItem('spendsmart_user');
+    navigate('/'); // back to landing page
   };
 
   if (loading) {
@@ -55,59 +63,63 @@ function App() {
 
   return (
     <div className="App min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
-      <BrowserRouter>
-        {!isAuthenticated ? (
-          <>
-            <LandingPage onGetStarted={() => setShowAuth(true)} />
-            {showAuth && (
-              <AuthModal
-                isOpen={showAuth}
-                onClose={() => setShowAuth(false)}
-                onLogin={handleLogin}
+      {!isAuthenticated ? (
+        <>
+          <LandingPage onGetStarted={() => setShowAuth(true)} />
+          {showAuth && (
+            <AuthModal
+              isOpen={showAuth}
+              onClose={() => setShowAuth(false)}
+              onLogin={handleLogin}
+            />
+          )}
+        </>
+      ) : (
+        <Routes>
+          <Route
+            path="/dashboard"
+            element={<ProtectedRoute element={Dashboard} isAuthenticated={isAuthenticated} user={currentUser} onLogout={handleLogout} />}
+          />
+          <Route
+            path="/analytics"
+            element={<ProtectedRoute element={Analytics} isAuthenticated={isAuthenticated} user={currentUser} onLogout={handleLogout} />}
+          />
+          <Route
+            path="/transactions"
+            element={<ProtectedRoute element={Transactions} isAuthenticated={isAuthenticated} user={currentUser} onLogout={handleLogout} />}
+          />
+          <Route
+            path="/insights"
+            element={<ProtectedRoute element={AIInsights} isAuthenticated={isAuthenticated} user={currentUser} onLogout={handleLogout} />}
+          />
+          <Route
+            path="/pay"
+            element={<ProtectedRoute element={PaymentFlow} isAuthenticated={isAuthenticated} user={currentUser} onLogout={handleLogout} />}
+          />
+          <Route
+            path="/import"
+            element={
+              <ProtectedRoute
+                element={ImportTransactions}
+                isAuthenticated={isAuthenticated}
+                user={currentUser}
+                onLogout={handleLogout}
+                onImportComplete={() => navigate('/transactions')}
               />
-            )}
-          </>
-        ) : (
-          <Routes>
-            <Route
-              path="/dashboard"
-              element={<Dashboard user={currentUser} onLogout={handleLogout} />}
-            />
-            <Route
-              path="/analytics"
-              element={<Analytics user={currentUser} onLogout={handleLogout} />}
-            />
-            <Route
-              path="/transactions"
-              element={<Transactions user={currentUser} onLogout={handleLogout} />}
-            />
-            <Route
-              path="/insights"
-              element={<AIInsights user={currentUser} onLogout={handleLogout} />}
-            />
-            <Route
-              path="/pay"
-              element={<PaymentFlow user={currentUser} onLogout={handleLogout} />}
-            />
-            <Route
-              path="/import"
-              element={
-                <ImportTransactions 
-                  user={currentUser} 
-                  onLogout={handleLogout}
-                  onImportComplete={(result) => {
-                    // Navigate to transactions page after successful import
-                    window.location.href = '/transactions';
-                  }}
-                />
-              }
-            />
-            <Route path="/" element={<Navigate to="/dashboard" replace />} />
-          </Routes>
-        )}
-      </BrowserRouter>
+            }
+          />
+          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+        </Routes>
+      )}
     </div>
   );
 }
 
-export default App;
+// Wrap App with BrowserRouter outside
+export default function WrappedApp() {
+  return (
+    <BrowserRouter>
+      <App />
+    </BrowserRouter>
+  );
+}

@@ -410,13 +410,27 @@ def parse_csv_transactions(content: str, user_id: str) -> tuple[List[Transaction
     errors = []
     
     try:
+        # Remove UTF-8 BOM if present
+        if content.startswith('\ufeff'):
+            content = content.lstrip('\ufeff')
+
         # Try to read CSV
         csv_reader = csv.DictReader(io.StringIO(content))
         
         for row_num, row in enumerate(csv_reader, start=2):  # Start from 2 because header is row 1
             try:
-                # Handle different possible column names (case insensitive)
-                row_lower = {k.lower().strip(): v.strip() if v else '' for k, v in row.items() if k}
+                # Handle different possible column names (case insensitive) and strip BOM
+                row_lower: Dict[str, str] = {}
+                for key, value in row.items():
+                    if not key:
+                        continue
+                    normalized_key = key.replace('\ufeff', '').lower().strip()
+                    if not normalized_key:
+                        continue
+                    if isinstance(value, str):
+                        row_lower[normalized_key] = value.strip()
+                    else:
+                        row_lower[normalized_key] = value or ''
 
                 # Extract required fields with fallbacks
                 debit_raw = _first_non_empty(row_lower, ['debit', 'withdrawal', 'debit amount'])
@@ -458,9 +472,16 @@ def parse_csv_transactions(content: str, user_id: str) -> tuple[List[Transaction
                     amount = abs(generic_amount)
                     transaction_type = 'income' if generic_amount > 0 else 'expense'
 
-                if amount is None or amount == 0:
-                    errors.append(f"Row {row_num}: Invalid amount")
+                # Skip empty/footer rows
+                if not date_str and not any([debit_raw, credit_raw, amount_raw]):
                     continue
+
+                if amount is None or amount == 0:
+                    if not any([debit_raw, credit_raw, amount_raw]):
+                        continue
+                    else:
+                        errors.append(f"Row {row_num}: Invalid amount")
+                        continue
 
                 # Parse date
                 if not date_str:
