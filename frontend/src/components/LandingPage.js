@@ -348,7 +348,7 @@ const LandingPage = ({ onGetStarted }) => {
               Built with ❤️ by Team Tripod for the future of personal finance
             </p>
             <p className="text-sm text-slate-500">
-              © 2025 SpendSmart AI. All rights reserved. | Bank-grade security | RBI compliant
+              © 2025 SpendSmart AI. All rights reserved.
             </p>
           </div>
         </div>
