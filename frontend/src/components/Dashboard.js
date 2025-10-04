@@ -18,7 +18,8 @@ import {
   Home,
   BarChart3,
   Receipt,
-  CreditCard
+  CreditCard,
+  Upload
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
@@ -85,6 +86,7 @@ const Dashboard = ({ user, onLogout }) => {
     { icon: Home, label: 'Dashboard', path: '/dashboard', active: true },
     { icon: BarChart3, label: 'Analytics', path: '/analytics' },
     { icon: Receipt, label: 'Transactions', path: '/transactions' },
+    { icon: Upload, label: 'Import', path: '/import' },
     { icon: Brain, label: 'AI Insights', path:  '/insights' },
     { icon: CreditCard, label: 'Pay', path: '/pay' }
   ];

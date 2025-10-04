@@ -18,7 +18,8 @@ import {
   TrendingUp,
   TrendingDown,
   ArrowUpRight,
-  ArrowDownRight
+  ArrowDownRight,
+  Upload
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
@@ -83,6 +84,7 @@ const Transactions = ({ user, onLogout }) => {
     { icon: Home, label: 'Dashboard', path: '/dashboard' },
     { icon: BarChart3, label: 'Analytics', path: '/analytics' },
     { icon: Receipt, label: 'Transactions', path: '/transactions', active: true },
+    { icon: Upload, label: 'Import', path: '/import' },
     { icon: Brain, label: 'AI Insights', path: '/insights' },
     { icon: CreditCard, label: 'Pay', path: '/pay' }
   ];

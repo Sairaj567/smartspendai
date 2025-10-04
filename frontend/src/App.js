@@ -9,6 +9,7 @@ import Analytics from './components/Analytics';
 import Transactions from './components/Transactions';
 import AIInsights from './components/AIInsights';
 import PaymentFlow from './components/PaymentFlow';
+import ImportTransactions from './components/ImportTransactions';
 import LandingPage from './components/LandingPage';
 import AuthModal from './components/AuthModal';
 
@@ -87,6 +88,19 @@ function App() {
             <Route
               path="/pay"
               element={<PaymentFlow user={currentUser} onLogout={handleLogout} />}
+            />
+            <Route
+              path="/import"
+              element={
+                <ImportTransactions 
+                  user={currentUser} 
+                  onLogout={handleLogout}
+                  onImportComplete={(result) => {
+                    // Navigate to transactions page after successful import
+                    window.location.href = '/transactions';
+                  }}
+                />
+              }
             />
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
           </Routes>

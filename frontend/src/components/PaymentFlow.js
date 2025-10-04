@@ -123,6 +123,11 @@ const PaymentFlow = ({ user, onLogout }) => {
 
     setPaymentStatus('processing');
     
+    console.log('Making payment request to:', `${API}/payments/upi-intent`);
+    console.log('BACKEND_URL:', BACKEND_URL);
+    console.log('API:', API);
+    console.log('Payment data:', { ...paymentData, amount: parseFloat(paymentData.amount), user_id: effectiveUser.id });
+    
     try {
       const response = await axios.post(`${API}/payments/upi-intent`, {
         ...paymentData,
@@ -141,8 +146,11 @@ const PaymentFlow = ({ user, onLogout }) => {
       
     } catch (error) {
       console.error('Payment error:', error);
+      console.error('Error details:', error.response?.data);
+      console.error('Error status:', error.response?.status);
+      console.error('Error message:', error.message);
       setPaymentStatus('error');
-      setPaymentResult({ error: 'Failed to create payment request' });
+      setPaymentResult({ error: `Failed to create payment request: ${error.message}` });
     }
   };
 
