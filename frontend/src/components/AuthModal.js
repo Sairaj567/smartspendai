@@ -29,11 +29,25 @@ const AuthModal = ({ isOpen, onClose, onLogin }) => {
     
     // Simulate login - in real app, this would be an API call
     setTimeout(() => {
+      // Prefer an explicitly entered name. If missing, derive from email (part before @) and
+      // make it human-friendly: replace separators with spaces and title-case each word.
+      const deriveName = () => {
+        if (formData.name && formData.name.trim()) return formData.name.trim();
+        if (formData.email && formData.email.includes('@')) {
+          const local = formData.email.split('@')[0];
++n          // replace common separators with space, split words, capitalize each
+          const words = local.replace(/[._+\-]/g, ' ').split(/\s+/).filter(Boolean);
+          const title = words.map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+          return title || 'User';
+        }
+        return 'User';
+      };
+
       const userData = {
         id: `user_${Date.now()}`,
-        name: formData.name || 'Demo User',
-        email: formData.email || 'demo@spendsmart.ai',
-        phone: formData.phone || '+91 9876543210'
+        name: deriveName(),
+        email: formData.email || '',
+        phone: formData.phone || ''
       };
       onLogin(userData);
       setIsLoading(false);
