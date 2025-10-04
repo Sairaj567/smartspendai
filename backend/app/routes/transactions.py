@@ -42,24 +42,7 @@ async def get_user_transactions(user_id: str, limit: int = 50) -> List[Transacti
         raise HTTPException(status_code=500, detail="Failed to fetch user transactions") from exc
 
 
-@router.post("/generate/{user_id}")
-async def generate_demo_transactions(user_id: str):
-    try:
-        existing_count = await db.transactions.count_documents({"user_id": user_id})
-        if existing_count > 0:
-            return {"message": f"User already has {existing_count} transactions"}
 
-        mock_transactions = generate_mock_transactions(user_id)
-        prepared_transactions = [prepare_for_mongo(tx) for tx in mock_transactions]
-        await db.transactions.insert_many(prepared_transactions)
-
-        return {
-            "message": f"Generated {len(mock_transactions)} demo transactions for user {user_id}",
-            "count": len(mock_transactions)
-        }
-    except Exception as exc:
-        logger.exception("Error generating demo transactions")
-        raise HTTPException(status_code=500, detail="Failed to generate demo transactions") from exc
 
 
 @router.post("/import/{user_id}", response_model=ImportResult)
