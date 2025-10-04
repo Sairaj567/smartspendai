@@ -370,6 +370,40 @@ def categorize_transaction(description: str, merchant: str) -> str:
     # Default category
     return 'Others'
 
+def _first_non_empty(row: Dict[str, str], keys: List[str], default: str = '') -> str:
+    for key in keys:
+        if key in row and row[key]:
+            return row[key]
+    return default
+
+
+def _parse_amount(value: Optional[str]) -> Optional[float]:
+    if not value:
+        return None
+
+    cleaned = value.replace(',', '').replace('₹', '').replace('rs', '').replace('RS', '').replace('INR', '')
+    cleaned = cleaned.replace('Dr', '').replace('dr', '').replace('CR', '').replace('Cr', '').strip()
+    if cleaned in {'', '-', '--'}:
+        return None
+
+    negative = False
+    if '(' in cleaned and ')' in cleaned:
+        negative = True
+        cleaned = cleaned.replace('(', '').replace(')', '')
+
+    if cleaned.startswith('-'):
+        negative = True
+
+    try:
+        amount = float(cleaned)
+    except ValueError:
+        return None
+
+    if negative:
+        amount = -abs(amount)
+    return amount
+
+
 def parse_csv_transactions(content: str, user_id: str) -> tuple[List[Transaction], List[str]]:
     """Parse CSV content and return transactions and errors"""
     transactions = []
@@ -382,46 +416,68 @@ def parse_csv_transactions(content: str, user_id: str) -> tuple[List[Transaction
         for row_num, row in enumerate(csv_reader, start=2):  # Start from 2 because header is row 1
             try:
                 # Handle different possible column names (case insensitive)
-                row_lower = {k.lower().strip(): v.strip() if v else '' for k, v in row.items()}
-                
+                row_lower = {k.lower().strip(): v.strip() if v else '' for k, v in row.items() if k}
+
                 # Extract required fields with fallbacks
-                amount_str = (row_lower.get('amount') or row_lower.get('debit') or 
-                             row_lower.get('credit') or row_lower.get('transaction_amount') or '0')
-                
-                date_str = (row_lower.get('date') or row_lower.get('transaction_date') or 
-                           row_lower.get('value_date') or '')
-                
-                description = (row_lower.get('description') or row_lower.get('narration') or 
-                              row_lower.get('particulars') or row_lower.get('details') or 'Import')
-                
-                merchant = (row_lower.get('merchant') or row_lower.get('payee') or 
-                           row_lower.get('counterparty') or description.split()[0] if description else 'Unknown')
-                
-                # Parse amount (handle negative values for expenses)
-                try:
-                    amount = abs(float(amount_str.replace(',', '').replace('₹', '').replace('Rs', '').strip()))
-                    if amount == 0:
-                        continue  # Skip zero amount transactions
-                except ValueError:
-                    errors.append(f"Row {row_num}: Invalid amount '{amount_str}'")
+                debit_raw = _first_non_empty(row_lower, ['debit', 'withdrawal', 'debit amount'])
+                credit_raw = _first_non_empty(row_lower, ['credit', 'deposit', 'credit amount'])
+                amount_raw = _first_non_empty(row_lower, ['amount', 'transaction_amount', 'txn amount'])
+
+                date_str = _first_non_empty(
+                    row_lower,
+                    ['date', 'transaction_date', 'value_date', 'tran date', 'txn date', 'transaction dt']
+                )
+
+                description = _first_non_empty(
+                    row_lower,
+                    ['description', 'narration', 'particulars', 'details', 'remarks']
+                ) or 'Import'
+
+                merchant = _first_non_empty(
+                    row_lower,
+                    ['merchant', 'payee', 'counterparty']
+                ) or (description.split()[0] if description else 'Unknown')
+
+                cheque_no = row_lower.get('chq no') or row_lower.get('cheque no') or row_lower.get('chq no.')
+
+                # Parse amounts and determine transaction type
+                debit_amount = _parse_amount(debit_raw)
+                credit_amount = _parse_amount(credit_raw)
+                generic_amount = _parse_amount(amount_raw)
+
+                transaction_type = 'expense'
+                amount = None
+
+                if debit_amount and debit_amount != 0:
+                    amount = abs(debit_amount)
+                    transaction_type = 'expense'
+                elif credit_amount and credit_amount != 0:
+                    amount = abs(credit_amount)
+                    transaction_type = 'income'
+                elif generic_amount and generic_amount != 0:
+                    amount = abs(generic_amount)
+                    transaction_type = 'income' if generic_amount > 0 else 'expense'
+
+                if amount is None or amount == 0:
+                    errors.append(f"Row {row_num}: Invalid amount")
                     continue
-                
+
                 # Parse date
                 if not date_str:
                     errors.append(f"Row {row_num}: Missing date")
                     continue
-                
+
                 transaction_date = parse_date_string(date_str)
-                
-                # Determine transaction type
-                transaction_type = 'expense'
-                if row_lower.get('credit') and not row_lower.get('debit'):
-                    transaction_type = 'income'
-                elif 'salary' in description.lower() or 'credit' in description.lower():
-                    transaction_type = 'income'
-                
-                # Auto-categorize
-                category = categorize_transaction(description, merchant)
+
+                # Auto-categorize or use provided category
+                explicit_category = _first_non_empty(row_lower, ['category', 'category name', 'category_name'])
+                if explicit_category:
+                    category = explicit_category
+                else:
+                    category = categorize_transaction(description, merchant)
+
+                if cheque_no:
+                    description = f"{description} (Chq: {cheque_no})"
                 
                 # Create transaction
                 transaction = Transaction(

@@ -41,3 +41,25 @@ def test_import_transactions_success(client):
     amounts = {tx["amount"] for tx in payload["imported_transactions"]}
     assert 250.0 in amounts
     assert 45000.0 in amounts
+
+
+def test_import_bank_statement_headers(client):
+    sample_path = Path(__file__).resolve().parent / "data" / "bank_statement.csv"
+    assert sample_path.exists(), "bank statement CSV missing"
+
+    user_id = f"pytest_{uuid.uuid4().hex}"
+
+    with sample_path.open("rb") as f:
+        files = {"file": (sample_path.name, f, "text/csv")}
+        response = client.post(f"/api/transactions/import/{user_id}", files=files)
+
+    assert response.status_code == 200, response.text
+
+    payload = response.json()
+    assert payload["successful_imports"] == 4
+    assert payload["failed_imports"] == 0
+
+    imported = payload["imported_transactions"]
+    assert any(tx["description"].endswith("(Chq: 123456)") for tx in imported)
+    assert any(tx["type"] == "income" and tx["amount"] == 60000.0 for tx in imported)
+    assert any(tx["type"] == "expense" and tx["amount"] == 15000.0 for tx in imported)
