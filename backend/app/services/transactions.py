@@ -13,6 +13,7 @@ def generate_mock_transactions(user_id: str, days: int = 30, count: Optional[int
         'Bills & Utilities': ['Electricity Bill', 'Water Bill', 'Mobile Recharge', 'Broadband', 'Gas Bill'],
         'Healthcare': ['Apollo Pharmacy', '1mg', 'Practo', 'Max Hospital', 'Fortis'],
         'Education': ["Coursera", 'Udemy', "BYJU'S", 'Unacademy', 'Khan Academy'],
+        'Investments': ['Groww', 'Zerodha', 'Upstox', 'Paytm Money', 'HDFC Securities', 'ICICI Direct'],
         'Income': ['Salary', 'Freelance Payment', 'Investment Returns', 'Cashback']
     }
 
@@ -52,6 +53,8 @@ def generate_mock_transactions(user_id: str, days: int = 30, count: Optional[int
             amount = round(random.uniform(100, 2000), 2)
         elif category == 'Education':
             amount = round(random.uniform(299, 1999), 2)
+        elif category == 'Investments':
+            amount = round(random.uniform(1000, 25000), 2)
         elif category == 'Income':
             amount = round(random.uniform(5000, 75000), 2)
         else:

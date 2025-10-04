@@ -94,6 +94,14 @@ def categorize_transaction(description: str, merchant: str) -> str:
     if any(keyword in description_lower or keyword in merchant_lower for keyword in health_keywords):
         return 'Healthcare'
 
+    investment_keywords = [
+        'investment', 'sip', 'mutual fund', 'mutualfund', 'stock', 'stocks', 'equity',
+        'portfolio', 'brokerage', 'demat', 'lic policy', 'ppf', 'nps', 'zerodha', 'groww',
+        'upstox', 'paytm money', 'icici direct', 'hdfc securities'
+    ]
+    if any(keyword in description_lower or keyword in merchant_lower for keyword in investment_keywords):
+        return 'Investments'
+
     return 'Others'
 
 

@@ -67,7 +67,8 @@ const Analytics = ({ user, onLogout }) => {
       'Bills & Utilities': '📝',
       'Healthcare': '🏥',
       'Education': '📚',
-      'Income': '💰'
+      'Income': '💰',
+      'Investments': '📈'
     };
     return icons[category] || '💳';
   };
@@ -313,7 +314,7 @@ const Analytics = ({ user, onLogout }) => {
 
             {/* Summary Overview */}
             {summary && (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mb-8">
                 <Card className="border-0 shadow-lg hover:shadow-xl transition-shadow" data-testid="expenses-overview-card">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm font-medium text-slate-600 flex items-center">
@@ -363,6 +364,23 @@ const Analytics = ({ user, onLogout }) => {
                     </div>
                     <p className="text-sm text-slate-600">
                       {((summary.net_savings / summary.total_income) * 100).toFixed(1)}% savings rate
+                    </p>
+                  </CardContent>
+                </Card>
+
+                <Card className="border-0 shadow-lg hover:shadow-xl transition-shadow" data-testid="invested-overview-card">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium text-slate-600 flex items-center">
+                      <ArrowUpRight className="h-4 w-4 mr-2 text-emerald-600" />
+                      Invested Amount
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-3xl font-bold text-slate-900 mb-1">
+                      ₹{(summary.invested_amount ?? 0).toLocaleString()}
+                    </div>
+                    <p className="text-sm text-slate-600">
+                      {summary.investment_transaction_count ? `${summary.investment_transaction_count} transactions` : 'Build your investment trail'}
                     </p>
                   </CardContent>
                 </Card>
@@ -430,6 +448,29 @@ const Analytics = ({ user, onLogout }) => {
                         </div>
                       </div>
                     ))}
+                    {summary.investment_category && !summary.top_categories.some((cat) => cat.category === 'Investments') && (
+                      <div className="relative border-t pt-4" data-testid="category-item-investments">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center space-x-3">
+                            <div className="text-2xl">{getCategoryIcon('Investments')}</div>
+                            <div>
+                              <div className="font-medium text-slate-900">{summary.investment_category.category}</div>
+                              <div className="text-sm text-slate-600">{summary.investment_category.percentage}% of total</div>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <div className="font-bold text-slate-900">₹{summary.investment_category.amount.toLocaleString()}</div>
+                          </div>
+                        </div>
+
+                        <div className="w-full bg-slate-200 rounded-full h-2">
+                          <div 
+                            className="bg-gradient-to-r from-emerald-500 to-emerald-600 h-2 rounded-full transition-all duration-700 ease-out"
+                            style={{ width: `${summary.investment_category.percentage}%` }}
+                          ></div>
+                        </div>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
 
@@ -442,6 +483,22 @@ const Analytics = ({ user, onLogout }) => {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
+                    {summary.investment_category && (
+                      <div className="p-4 bg-gradient-to-r from-emerald-50 to-green-50 rounded-lg">
+                        <div className="flex items-start space-x-3">
+                          <div className="text-2xl">{getCategoryIcon('Investments')}</div>
+                          <div>
+                            <div className="font-semibold text-slate-900 mb-1">
+                              Investment Spotlight
+                            </div>
+                            <div className="text-sm text-slate-600">
+                              You allocated <span className="font-medium text-emerald-700">₹{summary.investment_category.amount.toLocaleString()}</span> towards investments, representing {summary.investment_category.percentage}% of your outflow this period.
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
                     {summary.top_categories.length > 0 && (
                       <>
                         <div className="p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg">

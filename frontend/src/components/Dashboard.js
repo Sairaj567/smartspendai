@@ -197,7 +197,7 @@ const Dashboard = ({ user, onLogout }) => {
 
             {/* Summary Cards */}
             {summary && (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
                 <Card className="border-0 shadow-lg hover:shadow-xl transition-shadow card-hover" data-testid="total-expenses-card">
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle className="text-sm font-medium text-slate-600">Total Expenses</CardTitle>
@@ -233,6 +233,19 @@ const Dashboard = ({ user, onLogout }) => {
                     </div>
                     <p className="text-xs text-slate-600 mt-1">
                       {summary.net_savings >= 0 ? 'Great job!' : 'Consider budgeting'}
+                    </p>
+                  </CardContent>
+                </Card>
+
+                <Card className="border-0 shadow-lg hover:shadow-xl transition-shadow card-hover" data-testid="invested-amount-card">
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium text-slate-600">Invested Amount</CardTitle>
+                    <DollarSign className="h-4 w-4 text-emerald-600" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold text-slate-900">₹{(summary.invested_amount ?? 0).toLocaleString()}</div>
+                    <p className="text-xs text-slate-600 mt-1">
+                      {summary.investment_transaction_count ? `${summary.investment_transaction_count} transactions` : 'Track your portfolio moves'}
                     </p>
                   </CardContent>
                 </Card>
@@ -279,6 +292,18 @@ const Dashboard = ({ user, onLogout }) => {
                         </div>
                       </div>
                     ))}
+                    {summary.investment_category && !summary.top_categories.some((cat) => cat.category === 'Investments') && (
+                      <div className="flex items-center justify-between border-t pt-4" data-testid="category-investments">
+                        <div className="flex items-center space-x-3">
+                          <div className="w-3 h-3 rounded-full bg-emerald-500"></div>
+                          <span className="font-medium text-slate-700">{summary.investment_category.category}</span>
+                        </div>
+                        <div className="text-right">
+                          <div className="font-semibold text-slate-900">₹{summary.investment_category.amount.toLocaleString()}</div>
+                          <div className="text-sm text-slate-600">{summary.investment_category.percentage}%</div>
+                        </div>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               )}

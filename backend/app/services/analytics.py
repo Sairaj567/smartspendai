@@ -3,8 +3,14 @@ from typing import Any, Dict, List
 
 
 def aggregate_spending_summary(transactions: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def _is_investment(tx: Dict[str, Any]) -> bool:
+        category = (tx.get('category') or '').strip().lower()
+        return category in {'investment', 'investments'}
+
     total_expenses = sum(tx['amount'] for tx in transactions if tx.get('type') == 'expense')
     total_income = sum(tx['amount'] for tx in transactions if tx.get('type') == 'income')
+    invested_amount = sum(tx['amount'] for tx in transactions if _is_investment(tx))
+    investment_transactions = sum(1 for tx in transactions if _is_investment(tx))
 
     category_spending: Dict[str, float] = {}
     for tx in transactions:
@@ -13,6 +19,11 @@ def aggregate_spending_summary(transactions: List[Dict[str, Any]]) -> Dict[str, 
             category_spending[category] = category_spending.get(category, 0) + tx['amount']
 
     top_categories = sorted(category_spending.items(), key=lambda x: x[1], reverse=True)[:5]
+    investment_percentage = (
+        round((invested_amount / total_expenses) * 100, 1)
+        if total_expenses > 0 and invested_amount > 0
+        else 0
+    )
 
     return {
         "total_expenses": round(total_expenses, 2),
@@ -27,7 +38,14 @@ def aggregate_spending_summary(transactions: List[Dict[str, Any]]) -> Dict[str, 
             }
             for cat, amount in top_categories
         ],
-        "category_breakdown": {cat: round(amount, 2) for cat, amount in category_spending.items()}
+        "category_breakdown": {cat: round(amount, 2) for cat, amount in category_spending.items()},
+        "invested_amount": round(invested_amount, 2),
+        "investment_transaction_count": investment_transactions,
+        "investment_category": {
+            "category": "Investments",
+            "amount": round(invested_amount, 2),
+            "percentage": investment_percentage,
+        } if invested_amount > 0 else None,
     }
 
 
