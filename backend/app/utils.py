@@ -1,10 +1,55 @@
 import csv
 import io
-from datetime import datetime, timezone
-from typing import Dict, List, Optional, Tuple
+from calendar import monthrange
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional, Tuple
 
 from .config import logger
 from .models import Transaction
+
+
+DEFAULT_TIMEFRAME = "3_months"
+
+TIMEFRAME_LABELS = {
+    "current_month": "Current Month",
+    "last_month": "Last Month",
+    "3_months": "Last 3 Months",
+    "6_months": "Last 6 Months",
+    "1_year": "Last 12 Months",
+    "65_days": "Last 65 Days",
+}
+
+
+TRADING_PLATFORM_KEYWORDS = {
+    'groww',
+    'iccl groww',
+    'groww app',
+    'groww balance',
+    'groww investments',
+    'groww securities',
+    'groww trading',
+}
+
+
+def is_trading_platform_transaction(description: Optional[str], merchant: Optional[str]) -> bool:
+    combined = f"{(description or '').lower()} {(merchant or '').lower()}"
+    return any(keyword in combined for keyword in TRADING_PLATFORM_KEYWORDS)
+
+
+def normalize_investment_category(
+    category: Optional[str],
+    description: Optional[str],
+    merchant: Optional[str],
+    transaction_type: Optional[str] = None,
+) -> str:
+    normalized_category = (category or 'Others').strip() or 'Others'
+    if (transaction_type or 'expense').lower() != 'expense':
+        return normalized_category
+
+    if is_trading_platform_transaction(description, merchant):
+        return 'Investments'
+
+    return normalized_category
 
 
 def prepare_for_mongo(data):
@@ -70,6 +115,9 @@ def categorize_transaction(description: str, merchant: str) -> str:
     description_lower = description.lower()
     merchant_lower = merchant.lower()
 
+    if is_trading_platform_transaction(description, merchant):
+        return 'Investments'
+
     food_keywords = ['zomato', 'swiggy', 'restaurant', 'food', 'cafe', 'pizza', 'burger', 'mcdonald', 'kfc', 'dominos', 'starbucks']
     if any(keyword in description_lower or keyword in merchant_lower for keyword in food_keywords):
         return 'Food & Dining'
@@ -97,12 +145,78 @@ def categorize_transaction(description: str, merchant: str) -> str:
     investment_keywords = [
         'investment', 'sip', 'mutual fund', 'mutualfund', 'stock', 'stocks', 'equity',
         'portfolio', 'brokerage', 'demat', 'lic policy', 'ppf', 'nps', 'zerodha', 'groww',
-        'upstox', 'paytm money', 'icici direct', 'hdfc securities'
+        'upstox', 'paytm money', 'icici direct', 'hdfc securities', 'iccl groww'
     ]
     if any(keyword in description_lower or keyword in merchant_lower for keyword in investment_keywords):
         return 'Investments'
 
     return 'Others'
+
+
+def _start_of_day(dt: datetime) -> datetime:
+    return dt.replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def _start_of_month(dt: datetime) -> datetime:
+    start_day = dt.replace(day=1)
+    return _start_of_day(start_day)
+
+
+def _shift_months(dt: datetime, months: int) -> datetime:
+    year = dt.year + (dt.month - 1 + months) // 12
+    month = (dt.month - 1 + months) % 12 + 1
+    day = min(dt.day, monthrange(year, month)[1])
+    shifted = dt.replace(year=year, month=month, day=day)
+    return shifted
+
+
+def resolve_timeframe_window(timeframe: Optional[str]) -> Dict[str, Any]:
+    timezone_now = datetime.now(timezone.utc)
+    key = (timeframe or DEFAULT_TIMEFRAME).lower()
+    if key not in TIMEFRAME_LABELS:
+        key = DEFAULT_TIMEFRAME
+
+    start_current_month = _start_of_month(timezone_now)
+
+    if key == "current_month":
+        start = start_current_month
+        inclusive_end = timezone_now
+        end = timezone_now
+    elif key == "last_month":
+        end = start_current_month
+        last_month_anchor = _shift_months(start_current_month, -1)
+        start = _start_of_month(last_month_anchor)
+        inclusive_end = _start_of_day(end - timedelta(days=1))
+    elif key == "6_months":
+        start = _start_of_month(_shift_months(start_current_month, -5))
+        inclusive_end = timezone_now
+        end = timezone_now
+    elif key == "1_year":
+        start = _start_of_month(_shift_months(start_current_month, -11))
+        inclusive_end = timezone_now
+        end = timezone_now
+    elif key == "65_days":
+        start = _start_of_day(timezone_now - timedelta(days=65))
+        inclusive_end = timezone_now
+        end = timezone_now
+    else:  # "3_months" default
+        start = _start_of_month(_shift_months(start_current_month, -2))
+        inclusive_end = timezone_now
+        end = timezone_now
+
+    start = _start_of_day(start)
+    inclusive_end = max(start, inclusive_end)
+    inclusive_end_day = _start_of_day(inclusive_end)
+    days = max(1, (inclusive_end_day - start).days + 1)
+
+    return {
+        "key": key,
+        "label": TIMEFRAME_LABELS.get(key, TIMEFRAME_LABELS[DEFAULT_TIMEFRAME]),
+        "start": start,
+        "end": end,
+        "inclusive_end": inclusive_end,
+        "days": days,
+    }
 
 
 def _first_non_empty(row: Dict[str, str], keys: List[str], default: str = '') -> str:
@@ -224,6 +338,13 @@ def parse_csv_transactions(content: str, user_id: str) -> Tuple[List[Transaction
 
                 if cheque_no:
                     description = f"{description} (Chq: {cheque_no})"
+
+                category = normalize_investment_category(
+                    category,
+                    description,
+                    merchant,
+                    transaction_type,
+                )
 
                 transaction = Transaction(
                     user_id=user_id,

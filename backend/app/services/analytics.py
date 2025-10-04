@@ -1,10 +1,20 @@
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
+
+from ..utils import normalize_investment_category
 
 
 def aggregate_spending_summary(transactions: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def _resolved_category(tx: Dict[str, Any]) -> str:
+        return normalize_investment_category(
+            tx.get('category'),
+            tx.get('description'),
+            tx.get('merchant'),
+            tx.get('type'),
+        )
+
     def _is_investment(tx: Dict[str, Any]) -> bool:
-        category = (tx.get('category') or '').strip().lower()
+        category = _resolved_category(tx).strip().lower()
         return category in {'investment', 'investments'}
 
     total_expenses = sum(tx['amount'] for tx in transactions if tx.get('type') == 'expense')
@@ -14,8 +24,8 @@ def aggregate_spending_summary(transactions: List[Dict[str, Any]]) -> Dict[str, 
 
     category_spending: Dict[str, float] = {}
     for tx in transactions:
+        category = _resolved_category(tx)
         if tx.get('type') == 'expense':
-            category = tx.get('category') or 'Uncategorized'
             category_spending[category] = category_spending.get(category, 0) + tx['amount']
 
     top_categories = sorted(category_spending.items(), key=lambda x: x[1], reverse=True)[:5]
@@ -49,25 +59,54 @@ def aggregate_spending_summary(transactions: List[Dict[str, Any]]) -> Dict[str, 
     }
 
 
-def build_spending_trends(transactions: List[Dict[str, Any]], days: int) -> Dict[str, Any]:
-    start_date = datetime.now(timezone.utc) - timedelta(days=days)
+def build_spending_trends(
+    transactions: List[Dict[str, Any]],
+    days: int,
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None,
+) -> Dict[str, Any]:
+    computed_start = start_date or (datetime.now(timezone.utc) - timedelta(days=days))
+    computed_end = end_date or datetime.now(timezone.utc)
+
+    if computed_start.tzinfo is None:
+        computed_start = computed_start.replace(tzinfo=timezone.utc)
+    else:
+        computed_start = computed_start.astimezone(timezone.utc)
+
+    if computed_end.tzinfo is None:
+        computed_end = computed_end.replace(tzinfo=timezone.utc)
+    else:
+        computed_end = computed_end.astimezone(timezone.utc)
+
+    if computed_end < computed_start:
+        computed_end = computed_start
+
+    start_of_window = computed_start.replace(hour=0, minute=0, second=0, microsecond=0)
+    end_of_window = computed_end.replace(hour=0, minute=0, second=0, microsecond=0)
+    start_day = start_of_window.date()
+    end_day = end_of_window.date()
 
     daily_spending: Dict[str, float] = {}
     for tx in transactions:
         txn_date = tx.get('date')
         if not isinstance(txn_date, datetime):
             continue
-        if txn_date < start_date:
+        if txn_date.tzinfo is None:
+            txn_date = txn_date.replace(tzinfo=timezone.utc)
+        else:
+            txn_date = txn_date.astimezone(timezone.utc)
+        txn_day = txn_date.date()
+        if txn_day < start_day or txn_day > end_day:
             continue
         if tx.get('type') != 'expense':
             continue
 
-        date_key = txn_date.strftime('%Y-%m-%d')
+        date_key = txn_day.isoformat()
         daily_spending[date_key] = daily_spending.get(date_key, 0) + tx['amount']
 
     trends: List[Dict[str, Any]] = []
-    current_date = start_date
-    while current_date <= datetime.now(timezone.utc):
+    current_date = start_of_window
+    while current_date <= end_of_window:
         date_key = current_date.strftime('%Y-%m-%d')
         trends.append({
             "date": date_key,

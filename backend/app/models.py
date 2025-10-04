@@ -44,6 +44,7 @@ class SpendingInsight(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     user_id: str
     insight_type: str
+    timeframe: str = Field(default="3_months")
     title: str
     description: str
     recommendation: str

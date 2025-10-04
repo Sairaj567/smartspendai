@@ -25,25 +25,57 @@ import axios from 'axios';
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
 
+const TIMEFRAME_OPTIONS = [
+  { value: 'current_month', label: 'Current Month' },
+  { value: 'last_month', label: 'Last Month' },
+  { value: '3_months', label: 'Last 3 Months' },
+  { value: '6_months', label: 'Last 6 Months' },
+  { value: '1_year', label: 'Last 12 Months' },
+];
+
+const TIMEFRAME_LABELS = TIMEFRAME_OPTIONS.reduce((acc, option) => {
+  acc[option.value] = option.label;
+  return acc;
+}, {});
+
+const TIMEFRAME_MONTHS = {
+  current_month: 1,
+  last_month: 1,
+  '3_months': 3,
+  '6_months': 6,
+  '1_year': 12,
+};
+
 const AIInsights = ({ user, onLogout }) => {
   const [insights, setInsights] = useState([]);
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [timeframe, setTimeframe] = useState('3_months');
 
   useEffect(() => {
+    if (!user) return;
     loadInsights();
-  }, [user]);
+  }, [user, timeframe]);
 
   const loadInsights = async () => {
     try {
+      setLoading(true);
       const [insightsRes, summaryRes] = await Promise.all([
-        axios.get(`${API}/ai/insights/${user.id}`),
-        axios.get(`${API}/analytics/spending-summary/${user.id}`)
+        axios.get(`${API}/ai/insights/${user.id}`, {
+          params: { timeframe }
+        }),
+        axios.get(`${API}/analytics/spending-summary/${user.id}`, {
+          params: { timeframe }
+        })
       ]);
       
-      setInsights(insightsRes.data);
+      const decoratedInsights = (insightsRes.data || []).map((item) => ({
+        ...item,
+        timeframeLabel: TIMEFRAME_LABELS[item.timeframe] || TIMEFRAME_LABELS[timeframe]
+      }));
+      setInsights(decoratedInsights);
       setSummary(summaryRes.data);
     } catch (error) {
       console.error('Error loading insights:', error);
@@ -55,11 +87,12 @@ const AIInsights = ({ user, onLogout }) => {
   const generateNewInsights = async () => {
     try {
       setGenerating(true);
-      await axios.post(`${API}/ai/insights/${user.id}`);
-      
+      await axios.post(`${API}/ai/insights/${user.id}`, null, {
+        params: { timeframe }
+      });
+
       // Reload insights
-      const insightsRes = await axios.get(`${API}/ai/insights/${user.id}`);
-      setInsights(insightsRes.data);
+      await loadInsights();
     } catch (error) {
       console.error('Error generating insights:', error);
     } finally {
@@ -98,6 +131,8 @@ const AIInsights = ({ user, onLogout }) => {
         return <PieChart className="h-5 w-5 text-blue-600" />;
       case 'optimization':
         return <TrendingUp className="h-5 w-5 text-purple-600" />;
+      case 'investment':
+        return <DollarSign className="h-5 w-5 text-amber-600" />;
       default:
         return <Lightbulb className="h-5 w-5 text-yellow-600" />;
     }
@@ -113,10 +148,20 @@ const AIInsights = ({ user, onLogout }) => {
         return 'from-blue-50 to-indigo-50 border-blue-200';
       case 'optimization':
         return 'from-purple-50 to-violet-50 border-purple-200';
+      case 'investment':
+        return 'from-amber-50 to-lime-50 border-amber-200';
       default:
         return 'from-yellow-50 to-amber-50 border-yellow-200';
     }
   };
+
+  const monthsInWindow = TIMEFRAME_MONTHS[timeframe] ?? 1;
+  const isMultiMonth = monthsInWindow > 1;
+  const expensesValue = summary ? summary.total_expenses / (isMultiMonth ? monthsInWindow : 1) : 0;
+  const netSavingsValue = summary ? summary.net_savings / (isMultiMonth ? monthsInWindow : 1) : 0;
+  const expenseLabel = isMultiMonth ? 'Avg Monthly Expenses' : 'Monthly Expenses';
+  const savingsLabel = isMultiMonth ? 'Avg Monthly Net Savings' : 'Net Savings';
+  const transactionsLabel = isMultiMonth ? 'Transactions (window)' : 'Transactions';
 
   if (loading) {
     return (
@@ -212,7 +257,7 @@ const AIInsights = ({ user, onLogout }) => {
           <div className="p-6">
             {/* Header */}
             <div className="mb-8">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
                   <h1 className="text-3xl font-bold text-slate-900 mb-2" data-testid="insights-title">
                     AI Financial Insights 🤖
@@ -220,26 +265,50 @@ const AIInsights = ({ user, onLogout }) => {
                   <p className="text-slate-600">
                     Powered by Gemini 2.5 Pro - Get personalized financial advice
                   </p>
+                  <p className="text-sm text-slate-500 mt-2">
+                    Showing data for {TIMEFRAME_LABELS[timeframe] || 'selected window'}
+                  </p>
                 </div>
-                
-                <Button 
-                  onClick={generateNewInsights}
-                  disabled={generating}
-                  className="mt-4 sm:mt-0 bg-gradient-to-r from-indigo-600 to-purple-700 hover:from-indigo-700 hover:to-purple-800"
-                  data-testid="generate-insights-btn"
-                >
-                  {generating ? (
-                    <div className="flex items-center space-x-2">
-                      <RefreshCw className="h-4 w-4 animate-spin" />
-                      <span>Analyzing...</span>
-                    </div>
-                  ) : (
-                    <>
-                      <Zap className="h-4 w-4 mr-2" />
-                      Generate New Insights
-                    </>
-                  )}
-                </Button>
+
+                <div className="flex flex-col sm:items-end gap-3 w-full sm:w-auto">
+                  <div className="flex items-center gap-2">
+                    <label htmlFor="timeframe" className="text-sm font-medium text-slate-600">
+                      Timeframe
+                    </label>
+                    <select
+                      id="timeframe"
+                      value={timeframe}
+                      onChange={(event) => setTimeframe(event.target.value)}
+                      className="border border-slate-200 rounded-md px-3 py-2 text-sm text-slate-700 bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      data-testid="timeframe-select"
+                    >
+                      {TIMEFRAME_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <Button 
+                    onClick={generateNewInsights}
+                    disabled={generating}
+                    className="bg-gradient-to-r from-indigo-600 to-purple-700 hover:from-indigo-700 hover:to-purple-800"
+                    data-testid="generate-insights-btn"
+                  >
+                    {generating ? (
+                      <div className="flex items-center space-x-2">
+                        <RefreshCw className="h-4 w-4 animate-spin" />
+                        <span>Analyzing...</span>
+                      </div>
+                    ) : (
+                      <>
+                        <Zap className="h-4 w-4 mr-2" />
+                        Generate New Insights
+                      </>
+                    )}
+                  </Button>
+                </div>
               </div>
             </div>
 
@@ -253,8 +322,8 @@ const AIInsights = ({ user, onLogout }) => {
                         <TrendingDown className="h-6 w-6 text-white" />
                       </div>
                       <div>
-                        <p className="text-sm text-slate-600 mb-1">Monthly Expenses</p>
-                        <p className="text-2xl font-bold text-slate-900">₹{summary.total_expenses.toLocaleString()}</p>
+                        <p className="text-sm text-slate-600 mb-1">{expenseLabel}</p>
+                        <p className="text-2xl font-bold text-slate-900">₹{Math.round(expensesValue).toLocaleString()}</p>
                       </div>
                     </div>
                   </CardContent>
@@ -263,13 +332,13 @@ const AIInsights = ({ user, onLogout }) => {
                 <Card className="border-0 shadow-lg" data-testid="insights-stats-savings">
                   <CardContent className="p-6">
                     <div className="flex items-center space-x-4">
-                      <div className={`w-12 h-12 bg-gradient-to-br ${summary.net_savings >= 0 ? 'from-green-500 to-green-600' : 'from-red-500 to-red-600'} rounded-lg flex items-center justify-center`}>
+                      <div className={`w-12 h-12 bg-gradient-to-br ${netSavingsValue >= 0 ? 'from-green-500 to-green-600' : 'from-red-500 to-red-600'} rounded-lg flex items-center justify-center`}>
                         <Target className="h-6 w-6 text-white" />
                       </div>
                       <div>
-                        <p className="text-sm text-slate-600 mb-1">Net Savings</p>
-                        <p className={`text-2xl font-bold ${summary.net_savings >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                          ₹{summary.net_savings.toLocaleString()}
+                        <p className="text-sm text-slate-600 mb-1">{savingsLabel}</p>
+                        <p className={`text-2xl font-bold ${netSavingsValue >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          ₹{Math.round(netSavingsValue).toLocaleString()}
                         </p>
                       </div>
                     </div>
@@ -283,7 +352,7 @@ const AIInsights = ({ user, onLogout }) => {
                         <Receipt className="h-6 w-6 text-white" />
                       </div>
                       <div>
-                        <p className="text-sm text-slate-600 mb-1">Transactions</p>
+                        <p className="text-sm text-slate-600 mb-1">{transactionsLabel}</p>
                         <p className="text-2xl font-bold text-slate-900">{summary.transaction_count}</p>
                       </div>
                     </div>
@@ -301,7 +370,8 @@ const AIInsights = ({ user, onLogout }) => {
                   </div>
                   <h3 className="text-xl font-semibold text-slate-900 mb-4">No Insights Generated Yet</h3>
                   <p className="text-slate-600 mb-6">
-                    Let our AI analyze your spending patterns and provide personalized financial recommendations.
+                    We haven't generated insights for {TIMEFRAME_LABELS[timeframe] || 'this window'} yet.
+                    Let our AI analyze your spending patterns and provide personalized recommendations tailored to this timeframe.
                   </p>
                   <Button 
                     onClick={generateNewInsights}
@@ -343,9 +413,14 @@ const AIInsights = ({ user, onLogout }) => {
                             <p className="text-sm text-slate-600 capitalize">{insight.insight_type} Insight</p>
                           </div>
                         </div>
-                        <Badge className={getPriorityColor(insight.priority)}>
-                          {insight.priority} priority
-                        </Badge>
+                        <div className="flex flex-col items-end gap-1">
+                          <Badge className={getPriorityColor(insight.priority)}>
+                            {insight.priority} priority
+                          </Badge>
+                          <span className="text-xs font-medium text-slate-500 bg-white/70 px-2 py-1 rounded-md border border-slate-200">
+                            {insight.timeframeLabel || TIMEFRAME_LABELS[insight.timeframe] || TIMEFRAME_LABELS[timeframe]}
+                          </span>
+                        </div>
                       </div>
                       
                       <div className="space-y-4">

@@ -12,7 +12,12 @@ from ..services.openrouter_classifier import (
     classify_transaction_via_openrouter,
     enrich_transactions_with_ai,
 )
-from ..utils import parse_csv_transactions, parse_from_mongo, prepare_for_mongo
+from ..utils import (
+    normalize_investment_category,
+    parse_csv_transactions,
+    parse_from_mongo,
+    prepare_for_mongo,
+)
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
 
@@ -37,6 +42,12 @@ def _model_copy(model, *, update):
 async def create_transaction(transaction: TransactionCreate) -> Transaction:
     transaction_dict = _model_dump(transaction)
     transaction_dict['date'] = datetime.now(timezone.utc)
+    transaction_dict['category'] = normalize_investment_category(
+        transaction_dict.get('category'),
+        transaction_dict.get('description'),
+        transaction_dict.get('merchant'),
+        transaction_dict.get('type'),
+    )
     transaction_obj = Transaction(**transaction_dict)
 
     try:
@@ -69,7 +80,17 @@ async def get_user_transactions(user_id: str, limit: Optional[int] = None) -> Li
         if limit and limit > 0:
             cursor = cursor.limit(limit)
         transactions = await cursor.to_list(length=None)
-        return [Transaction(**parse_from_mongo(transaction)) for transaction in transactions]
+        normalized_transactions: List[Transaction] = []
+        for transaction in transactions:
+            parsed = parse_from_mongo(transaction)
+            parsed['category'] = normalize_investment_category(
+                parsed.get('category'),
+                parsed.get('description'),
+                parsed.get('merchant'),
+                parsed.get('type'),
+            )
+            normalized_transactions.append(Transaction(**parsed))
+        return normalized_transactions
     except Exception as exc:
         logger.exception("Database error in get_user_transactions")
         raise HTTPException(status_code=500, detail="Failed to fetch user transactions") from exc

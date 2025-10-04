@@ -84,3 +84,27 @@ def test_get_user_transactions_custom_limit(monkeypatch):
 
     result = run_async(transactions_route.get_user_transactions("user123", limit=120))
     assert len(result) == 120
+
+
+def test_get_user_transactions_groww_expense_normalized(monkeypatch):
+    base_date = datetime.now(timezone.utc).isoformat()
+    documents = [
+        {
+            "_id": "mongo-groww",
+            "id": "txn-groww",
+            "user_id": "user123",
+            "amount": 1500.0,
+            "category": "Others",
+            "description": "ICCL Groww purchase",
+            "merchant": "ICCL Groww",
+            "date": base_date,
+            "type": "expense",
+            "payment_method": "UPI",
+        }
+    ]
+    fake_db = types.SimpleNamespace(transactions=FakeCollection(documents))
+    monkeypatch.setattr(transactions_route, "db", fake_db, raising=False)
+
+    result = run_async(transactions_route.get_user_transactions("user123"))
+    assert len(result) == 1
+    assert result[0].category == "Investments"

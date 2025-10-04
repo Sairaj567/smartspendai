@@ -1,7 +1,31 @@
-from typing import Dict, List
+from math import floor
+from typing import Dict, List, Optional
 
 
-def generate_spending_insights(summary: Dict, trends: Dict, user_id: str) -> List[Dict]:
+_TIMEFRAME_MONTH_MAP = {
+    "current_month": 1,
+    "last_month": 1,
+    "3_months": 3,
+    "6_months": 6,
+    "1_year": 12,
+    "65_days": 2,
+}
+
+
+def _round_to_step(amount: float, step: int = 500) -> float:
+    if amount <= 0:
+        return 0
+    rounded = floor(amount / step) * step
+    return max(step, rounded)
+
+
+def generate_spending_insights(
+    summary: Dict,
+    trends: Dict,
+    user_id: str,
+    timeframe: str,
+    timeframe_label: Optional[str] = None,
+) -> List[Dict]:
     insights: List[Dict] = []
 
     total_expenses = summary.get('total_expenses', 0)
@@ -9,6 +33,20 @@ def generate_spending_insights(summary: Dict, trends: Dict, user_id: str) -> Lis
     net_savings = summary.get('net_savings', 0)
     top_categories = summary.get('top_categories', [])
     avg_daily_spending = trends.get('average_daily_spending', 0)
+    savings_rate = (net_savings / total_income) * 100 if total_income else 0
+
+    timeframe_label = timeframe_label or timeframe.replace('_', ' ').title()
+    months_in_window = _TIMEFRAME_MONTH_MAP.get(timeframe, max(1, round(len(trends.get('trends', [])) / 30) or 1))
+    avg_monthly_income = total_income / months_in_window if months_in_window else total_income
+    avg_monthly_expenses = total_expenses / months_in_window if months_in_window else total_expenses
+    monthly_surplus = max(0, net_savings / months_in_window if months_in_window else net_savings)
+    investment_snapshot = summary.get('investment_category') or {}
+    invested_amount = summary.get('invested_amount', 0)
+    investment_percentage = investment_snapshot.get('percentage') or (
+        round((invested_amount / total_expenses) * 100, 1)
+        if total_expenses
+        else 0
+    )
 
     if total_income > 0:
         savings_rate = (net_savings / total_income) * 100
@@ -35,6 +73,58 @@ def generate_spending_insights(summary: Dict, trends: Dict, user_id: str) -> Lis
                 "recommendation": "Consider investing your excess savings in mutual funds or SIPs for better long-term returns.",
                 "priority": "low",
                 "category": "optimization"
+            })
+
+    if monthly_surplus >= 1000:
+        sip_base = min(
+            monthly_surplus * 0.4,
+            avg_monthly_income * 0.25 if avg_monthly_income else monthly_surplus * 0.4,
+        )
+        sip_cap = _round_to_step(monthly_surplus * 0.8, 500)
+        sip_amount = min(_round_to_step(sip_base, 500), sip_cap, 25000)
+        emergency_target = avg_monthly_expenses * 6 if avg_monthly_expenses else 0
+        months_to_emergency = emergency_target / sip_amount if sip_amount > 0 else None
+        emergency_note = (
+            f"Build a 6-month safety net (~₹{emergency_target:,.0f}) in a high-yield savings account "
+            "like AU Small Finance, IDFC FIRST, or State Bank's Digital FD."
+            if emergency_target
+            else "Use a high-yield savings account to build an emergency fund."
+        )
+
+        insights.append({
+            "title": f"Automate a ₹{sip_amount:,.0f} Monthly SIP",
+            "description": (
+                f"Across the {timeframe_label.lower()}, you retained roughly ₹{monthly_surplus:,.0f} per month after expenses. "
+                "Channeling a portion into disciplined investing will compound faster than idle cash."
+            ),
+            "recommendation": (
+                f"Set up a ₹{sip_amount:,.0f} SIP into diversified mutual funds: 60% Nifty 50/ Sensex index fund, "
+                "25% flexi-cap fund, 15% short-term debt. "
+                f"This plan can fund your emergency corpus in about {months_to_emergency:.0f} months." if months_to_emergency and months_to_emergency > 0 else emergency_note
+            ),
+            "priority": "medium" if savings_rate < 20 else "low",
+            "category": "investment"
+        })
+
+        if monthly_surplus >= 4000:
+            equity_allocation = _round_to_step(monthly_surplus * 0.5, 1000)
+            high_yield_buffer = _round_to_step(monthly_surplus * 0.2, 500)
+            risk_note = (
+                "Your current investment allocation is light at "
+                f"{investment_percentage:.1f}% of expenses." if investment_percentage < 15 else
+                "You're already investing consistently—consider widening your mix."
+            )
+            insights.append({
+                "title": "Grow with Low-Cost Equity",
+                "description": (
+                    f"{risk_note} With ₹{monthly_surplus:,.0f} free each month, you can comfortably add equities without straining cash flow."
+                ),
+                "recommendation": (
+                    f"Deploy ₹{equity_allocation:,.0f} into large-cap ETFs (Nifty 50, Sensex) via Zerodha/ Groww, keep ₹{high_yield_buffer:,.0f} "
+                    "in a sweep-in savings account (Yes Optima, Kotak ActivMoney) for near-term goals, and route the balance into a conservative hybrid fund."
+                ),
+                "priority": "medium" if investment_percentage < 15 else "low",
+                "category": "investment"
             })
 
     if top_categories:
@@ -96,4 +186,4 @@ def generate_spending_insights(summary: Dict, trends: Dict, user_id: str) -> Lis
             "category": "general"
         })
 
-    return insights[:4]
+    return insights[:6]

@@ -1,5 +1,5 @@
-from datetime import datetime, timedelta, timezone
-from typing import List
+from datetime import datetime, timezone
+from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException
 
@@ -8,7 +8,7 @@ from ..database import get_database
 from ..models import SpendingInsight
 from ..services.analytics import aggregate_spending_summary, build_spending_trends
 from ..services.insights import generate_spending_insights
-from ..utils import parse_from_mongo, prepare_for_mongo
+from ..utils import DEFAULT_TIMEFRAME, parse_from_mongo, prepare_for_mongo, resolve_timeframe_window
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 
@@ -16,25 +16,52 @@ db = get_database()
 
 
 @router.post("/insights/{user_id}")
-async def create_ai_insights(user_id: str):
+async def create_ai_insights(user_id: str, timeframe: str = DEFAULT_TIMEFRAME):
     try:
-        thirty_days_ago = datetime.now(timezone.utc) - timedelta(days=30)
+        window = resolve_timeframe_window(timeframe)
         transactions = await db.transactions.find({
             "user_id": user_id,
-            "date": {"$gte": thirty_days_ago.isoformat()}
+            "date": {"$gte": window["start"].isoformat(), "$lt": window["end"].isoformat()}
         }).to_list(length=None)
         parsed_transactions = [parse_from_mongo(tx) for tx in transactions]
 
         summary = aggregate_spending_summary(parsed_transactions)
-        trends = build_spending_trends(parsed_transactions, days=30)
-        insights_payload = generate_spending_insights(summary, trends, user_id)
+        trends = build_spending_trends(
+            parsed_transactions,
+            days=window["days"],
+            start_date=window["start"],
+            end_date=window["inclusive_end"],
+        )
+        raw_insights = generate_spending_insights(
+            summary,
+            trends,
+            user_id,
+            timeframe=window["key"],
+            timeframe_label=window["label"],
+        )
 
-        await db.spending_insights.delete_many({"user_id": user_id})
+        insights_payload = [
+            {
+                **insight_data,
+                "timeframe": window["key"],
+                "timeframe_label": window["label"],
+            }
+            for insight_data in raw_insights
+        ]
+
+        await db.spending_insights.delete_many({
+            "user_id": user_id,
+            "$or": [
+                {"timeframe": window["key"]},
+                {"timeframe": {"$exists": False}}
+            ]
+        })
         insights_to_store: List[dict] = []
         for insight_data in insights_payload:
             insight = SpendingInsight(
                 user_id=user_id,
                 insight_type=insight_data.get('category', 'general'),
+                timeframe=window["key"],
                 title=insight_data.get('title', 'Financial Insight'),
                 description=insight_data.get('description', ''),
                 recommendation=insight_data.get('recommendation', ''),
@@ -47,7 +74,9 @@ async def create_ai_insights(user_id: str):
 
         return {
             "insights": insights_payload,
-            "generated_at": datetime.now(timezone.utc).isoformat()
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "timeframe": window["key"],
+            "timeframe_label": window["label"],
         }
     except HTTPException:
         raise
@@ -57,9 +86,20 @@ async def create_ai_insights(user_id: str):
 
 
 @router.get("/insights/{user_id}")
-async def get_ai_insights(user_id: str, limit: int = 10):
+async def get_ai_insights(user_id: str, limit: int = 10, timeframe: Optional[str] = None):
     try:
-        insights = await db.spending_insights.find({"user_id": user_id}).sort("created_at", -1).limit(limit).to_list(length=None)
+        window = resolve_timeframe_window(timeframe or DEFAULT_TIMEFRAME)
+        insights = await db.spending_insights.find({
+            "user_id": user_id,
+            "timeframe": window["key"]
+        }).sort("created_at", -1).limit(limit).to_list(length=None)
+
+        if not insights:
+            insights = await db.spending_insights.find({
+                "user_id": user_id,
+                "timeframe": {"$exists": False}
+            }).sort("created_at", -1).limit(limit).to_list(length=None)
+
         return [SpendingInsight(**parse_from_mongo(insight)) for insight in insights]
     except Exception as exc:
         logger.exception("Error retrieving AI insights")
