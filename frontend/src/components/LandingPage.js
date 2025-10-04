@@ -99,9 +99,7 @@ const LandingPage = ({ onGetStarted }) => {
           <div className="grid lg:grid-cols-2 gap-12 items-center">
             <div className="space-y-8">
               <div className="space-y-4">
-                <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100">
-                  🏆 Winner - Best Fintech Innovation 2025
-                </Badge>
+              
                 <h1 className="text-5xl lg:text-6xl font-bold text-slate-900 leading-tight">
                   Smart Money,
                   <span className="bg-gradient-to-r from-blue-600 to-indigo-700 bg-clip-text text-transparent">
@@ -348,7 +346,7 @@ const LandingPage = ({ onGetStarted }) => {
               Built with ❤️ by Team Tripod for the future of personal finance
             </p>
             <p className="text-sm text-slate-500">
-              © 2025 SpendSmart AI. All rights reserved. | Bank-grade security | RBI compliant
+              © 2025 SpendSmart AI. All rights reserved.
             </p>
           </div>
         </div>
