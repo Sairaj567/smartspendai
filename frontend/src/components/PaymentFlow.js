@@ -550,13 +550,7 @@ const PaymentFlow = ({ user, onLogout }) => {
                       </div>
                     </div>
                     
-                    <div className="flex items-start space-x-3">
-                      <CheckCircle className="h-5 w-5 text-green-600 mt-0.5" />
-                      <div>
-                        <p className="font-medium text-slate-900">RBI Compliant</p>
-                        <p className="text-sm text-slate-600">Follows all regulatory guidelines</p>
-                      </div>
-                    </div>
+        
                     
                     <div className="flex items-start space-x-3">
                       <CheckCircle className="h-5 w-5 text-green-600 mt-0.5" />
