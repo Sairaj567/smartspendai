@@ -13,13 +13,16 @@ db = get_database()
 
 
 @router.get("/spending-summary/{user_id}")
-async def get_spending_summary(user_id: str):
-    thirty_days_ago = datetime.now(timezone.utc) - timedelta(days=30)
+async def get_spending_summary(user_id: str, days: int = 30):
+    if days <= 0:
+        raise HTTPException(status_code=400, detail="days must be a positive integer")
+
+    window_start = datetime.now(timezone.utc) - timedelta(days=days)
 
     try:
         transactions = await db.transactions.find({
             "user_id": user_id,
-            "date": {"$gte": thirty_days_ago.isoformat()}
+            "date": {"$gte": window_start.isoformat()}
         }).to_list(length=None)
         parsed_transactions = [parse_from_mongo(tx) for tx in transactions]
     except Exception as exc:
@@ -31,6 +34,9 @@ async def get_spending_summary(user_id: str):
 
 @router.get("/spending-trends/{user_id}")
 async def get_spending_trends(user_id: str, days: int = 30):
+    if days <= 0:
+        raise HTTPException(status_code=400, detail="days must be a positive integer")
+
     start_date = datetime.now(timezone.utc) - timedelta(days=days)
 
     try:

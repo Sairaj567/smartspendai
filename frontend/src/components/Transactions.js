@@ -24,8 +24,22 @@ import {
 import { Link } from 'react-router-dom';
 import axios from 'axios';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
+const resolveApiBase = () => {
+  const envBase = process.env.REACT_APP_BACKEND_URL;
+  if (envBase) {
+    return `${envBase.replace(/\/$/, '')}/api`;
+  }
+
+  if (typeof window !== 'undefined' && window.location) {
+    const { protocol } = window.location;
+    return `${protocol}//localhost:8000/api`;
+  }
+
+  return 'http://localhost:8000/api';
+};
+
+const API = resolveApiBase();
+const TRANSACTION_FETCH_LIMIT = Number(process.env.REACT_APP_TRANSACTION_FETCH_LIMIT ?? 0);
 
 const Transactions = ({ user, onLogout }) => {
   const [transactions, setTransactions] = useState([]);
@@ -45,8 +59,18 @@ const Transactions = ({ user, onLogout }) => {
   }, [transactions, searchQuery, selectedCategory, selectedType]);
 
   const loadTransactions = async () => {
+    if (!user?.id) {
+      setTransactions([]);
+      setLoading(false);
+      return;
+    }
+
+    const limitQuery = Number.isFinite(TRANSACTION_FETCH_LIMIT) && TRANSACTION_FETCH_LIMIT > 0
+      ? `?limit=${TRANSACTION_FETCH_LIMIT}`
+      : '';
+
     try {
-      const response = await axios.get(`${API}/transactions/${user.id}?limit=100`);
+      const response = await axios.get(`${API}/transactions/${user.id}${limitQuery}`);
       setTransactions(response.data);
     } catch (error) {
       console.error('Error loading transactions:', error);

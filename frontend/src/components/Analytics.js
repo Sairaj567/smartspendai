@@ -20,8 +20,21 @@ import {
 import { Link } from 'react-router-dom';
 import axios from 'axios';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
+const resolveApiBase = () => {
+  const envBase = process.env.REACT_APP_BACKEND_URL;
+  if (envBase) {
+    return `${envBase.replace(/\/$/, '')}/api`;
+  }
+
+  if (typeof window !== 'undefined' && window.location) {
+    const { protocol } = window.location;
+    return `${protocol}//localhost:8000/api`;
+  }
+
+  return 'http://localhost:8000/api';
+};
+
+const API = resolveApiBase();
 
 const Analytics = ({ user, onLogout }) => {
   const [summary, setSummary] = useState(null);
@@ -35,10 +48,18 @@ const Analytics = ({ user, onLogout }) => {
   }, [user, selectedPeriod]);
 
   const loadAnalytics = async () => {
+    if (!user?.id) {
+      setSummary(null);
+      setTrends(null);
+      setLoading(false);
+      return;
+    }
+
     try {
+      const query = `?days=${selectedPeriod}`;
       const [summaryRes, trendsRes] = await Promise.all([
-        axios.get(`${API}/analytics/spending-summary/${user.id}`),
-        axios.get(`${API}/analytics/spending-trends/${user.id}?days=${selectedPeriod}`)
+        axios.get(`${API}/analytics/spending-summary/${user.id}${query}`),
+        axios.get(`${API}/analytics/spending-trends/${user.id}${query}`)
       ]);
       
       setSummary(summaryRes.data);
@@ -307,6 +328,8 @@ const Analytics = ({ user, onLogout }) => {
                     <option value={7}>Last 7 days</option>
                     <option value={30}>Last 30 days</option>
                     <option value={90}>Last 3 months</option>
+                    <option value={180}>Last 6 months</option>
+                    <option value={365}>Last 12 months</option>
                   </select>
                 </div>
               </div>
@@ -399,7 +422,7 @@ const Analytics = ({ user, onLogout }) => {
                   </CardHeader>
                   <CardContent>
                     <div>
-                      <LineChart data={trends.trends.slice(-14)} height={200} />
+                      <LineChart data={trends.trends} height={200} />
                     </div>
                     <div className="mt-4 p-4 bg-slate-50 rounded-lg">
                       <div className="flex items-center justify-between text-sm">

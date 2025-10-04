@@ -72,7 +72,10 @@ Configure the frontend backend URL in `frontend/.env` (example):
 
 ```dotenv
 REACT_APP_BACKEND_URL=http://localhost:8000
+REACT_APP_TRANSACTION_FETCH_LIMIT=0
 ```
+
+> `REACT_APP_TRANSACTION_FETCH_LIMIT` lets you cap the number of transactions fetched per request. Set it to `0` (default) to load the full history, or provide a positive integer for lightweight views on resource-constrained devices.
 
 ## Importing Transactions from CSV/Excel
 
@@ -88,6 +91,10 @@ The backend endpoint is available at `POST /api/transactions/import/{user_id}` a
 ### AI-Powered Categorization
 
 When an OpenRouter API key is configured, SmartSpendAI upgrades "Others" or "Auto" categories using an LLM-backed classifier. Both the bulk importer and the single-transaction endpoint now invoke the classifier automatically after the rule-based heuristics run, so manual entries are refined the same way as file uploads. The importer batches asynchronous calls and caches results for a day to control latency. To fall back to heuristic-only categorisation, simply omit the OpenRouter credentials from your environment.
+
+> **Transaction history endpoint**: `GET /api/transactions/{user_id}` now returns the full dataset by default. Pass a positive `limit` query parameter if you want to page or trim the result set (for example, `/api/transactions/demo?limit=100`).
+
+> **Analytics endpoints**: Both `GET /api/analytics/spending-summary/{user_id}` and `GET /api/analytics/spending-trends/{user_id}` accept a `days` query parameter. The frontend selector simply forwards this value so switching from 30 days to 3 months updates every metric (total income, expenses, net savings, investments) in step. Values must be positive; the API will return `400` for invalid ranges.
 
 ## Testing the Import API
 

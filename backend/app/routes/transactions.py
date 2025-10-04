@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import List
+from typing import List, Optional
 
 import io
 import pandas as pd
@@ -63,9 +63,12 @@ async def create_transaction(transaction: TransactionCreate) -> Transaction:
 
 
 @router.get("/{user_id}", response_model=List[Transaction])
-async def get_user_transactions(user_id: str, limit: int = 50) -> List[Transaction]:
+async def get_user_transactions(user_id: str, limit: Optional[int] = None) -> List[Transaction]:
     try:
-        transactions = await db.transactions.find({"user_id": user_id}).sort("date", -1).limit(limit).to_list(length=None)
+        cursor = db.transactions.find({"user_id": user_id}).sort("date", -1)
+        if limit and limit > 0:
+            cursor = cursor.limit(limit)
+        transactions = await cursor.to_list(length=None)
         return [Transaction(**parse_from_mongo(transaction)) for transaction in transactions]
     except Exception as exc:
         logger.exception("Database error in get_user_transactions")
