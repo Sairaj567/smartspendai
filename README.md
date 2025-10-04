@@ -63,7 +63,7 @@ REACT_APP_BACKEND_URL=http://localhost:8000
 
 The backend endpoint is available at `POST /api/transactions/import/{user_id}` and supports multipart uploads. A sample dataset is provided at `test_transactions.csv` for quick testing.
 
-> Bank statement exports that ship with headers such as `Tran Date`, `Chq No`, `Particulars`, `Debit`, `Credit`, `Balance`, and `Init. Br` are also recognized—dates are parsed automatically, cheque numbers are preserved in the description, and the importer classifies debits as expenses and credits as income.
+> Bank statement exports that ship with headers such as `Tran Date`, `Chq No`, `Particulars`, `Debit`, `Credit`, `Balance`, and `Init. Br` are also recognized—dates are parsed automatically, cheque numbers are preserved in the description, and the importer classifies debits as expenses and credits as income. Files that arrive with a UTF-8 BOM, trailing blank columns, or multi-line descriptions (the common format for bank-generated CSVs) import without any additional cleanup.
 
 ## Testing the Import API
 
