@@ -29,6 +29,16 @@ class Settings:
         self.db_name: str = os.environ.get('DB_NAME', 'smartspend')
         self.allowed_origins_raw: str = os.environ.get('CORS_ORIGINS', '*')
         self.app_title: str = os.environ.get('APP_TITLE', 'SpendSmart AI Backend')
+        self.openrouter_api_key: str = os.environ.get('OPENROUTER_API_KEY', '')
+        self.openrouter_model: str = os.environ.get('OPENROUTER_MODEL', 'openai/gpt-4o-mini')
+        self.openrouter_app_url: str = os.environ.get('OPENROUTER_APP_URL', '')
+        self.openrouter_app_name: str = os.environ.get('OPENROUTER_APP_NAME', 'SmartSpendAI')
+        self.openrouter_base_url: str = os.environ.get('OPENROUTER_BASE_URL', 'https://openrouter.ai/api/v1')
+        timeout_raw = os.environ.get('OPENROUTER_TIMEOUT', '30')
+        try:
+            self.openrouter_timeout: float = float(timeout_raw)
+        except (TypeError, ValueError):
+            self.openrouter_timeout = 30.0
 
     @property
     def cors_origins(self) -> List[str]:

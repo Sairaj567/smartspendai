@@ -52,7 +52,13 @@ Environment variables expected in `backend/.env`:
 ```dotenv
 MONGO_URL=mongodb://localhost:27017
 DB_NAME=smartspend
+OPENROUTER_API_KEY=your-openrouter-key
+OPENROUTER_MODEL=openai/gpt-4o-mini
+OPENROUTER_APP_URL=http://localhost:3000
+OPENROUTER_APP_NAME=SmartSpendAI
 ```
+
+> `OPENROUTER_API_KEY` is optional—when omitted, the importer falls back to rule-based categorization. The additional values let OpenRouter attribute traffic from your app and may be left at their defaults in development.
 
 ### 2. Frontend
 
@@ -78,6 +84,10 @@ REACT_APP_BACKEND_URL=http://localhost:8000
 The backend endpoint is available at `POST /api/transactions/import/{user_id}` and supports multipart uploads. A sample dataset is provided at `test_transactions.csv` for quick testing.
 
 > Bank statement exports that ship with headers such as `Tran Date`, `Chq No`, `Particulars`, `Debit`, `Credit`, `Balance`, and `Init. Br` are also recognized—dates are parsed automatically, cheque numbers are preserved in the description, and the importer classifies debits as expenses and credits as income. Files that arrive with a UTF-8 BOM, trailing blank columns, or multi-line descriptions (the common format for bank-generated CSVs) import without any additional cleanup.
+
+### AI-Powered Categorization
+
+When an OpenRouter API key is configured, SmartSpendAI upgrades "Others" or "Auto" categories using an LLM-backed classifier. The importer batches asynchronous calls and caches results for a day to control latency. You can disable the behaviour per request by setting `auto_categorize=false` on `POST /api/transactions/import/{user_id}` or when creating a single transaction with `POST /api/transactions/`.
 
 ## Testing the Import API
 

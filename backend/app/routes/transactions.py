@@ -8,6 +8,10 @@ from fastapi import APIRouter, File, HTTPException, UploadFile
 from ..config import logger
 from ..database import get_database
 from ..models import ImportResult, Transaction, TransactionCreate
+from ..services.openrouter_classifier import (
+    classify_transaction_via_openrouter,
+    enrich_transactions_with_ai,
+)
 from ..services.transactions import generate_mock_transactions
 from ..utils import parse_csv_transactions, parse_from_mongo, prepare_for_mongo
 
@@ -17,9 +21,25 @@ db = get_database()
 
 
 @router.post("/", response_model=Transaction)
-async def create_transaction(transaction: TransactionCreate) -> Transaction:
+async def create_transaction(transaction: TransactionCreate, auto_categorize: bool = True) -> Transaction:
     transaction_dict = transaction.dict()
     transaction_dict['date'] = datetime.now(timezone.utc)
+
+    if auto_categorize:
+        try:
+            new_category = await classify_transaction_via_openrouter(
+                description=transaction_dict.get('description', ''),
+                merchant=transaction_dict.get('merchant'),
+                amount=transaction_dict.get('amount'),
+                transaction_type=transaction_dict.get('type'),
+                current_category=transaction_dict.get('category'),
+                allow_override=False,
+            )
+            if new_category:
+                transaction_dict['category'] = new_category
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.warning("AI categorization failed during transaction create: %s", exc)
+
     transaction_obj = Transaction(**transaction_dict)
 
     try:
@@ -42,28 +62,16 @@ async def get_user_transactions(user_id: str, limit: int = 50) -> List[Transacti
         raise HTTPException(status_code=500, detail="Failed to fetch user transactions") from exc
 
 
-@router.post("/generate/{user_id}")
-async def generate_demo_transactions(user_id: str):
-    try:
-        existing_count = await db.transactions.count_documents({"user_id": user_id})
-        if existing_count > 0:
-            return {"message": f"User already has {existing_count} transactions"}
 
-        mock_transactions = generate_mock_transactions(user_id)
-        prepared_transactions = [prepare_for_mongo(tx) for tx in mock_transactions]
-        await db.transactions.insert_many(prepared_transactions)
-
-        return {
-            "message": f"Generated {len(mock_transactions)} demo transactions for user {user_id}",
-            "count": len(mock_transactions)
-        }
-    except Exception as exc:
-        logger.exception("Error generating demo transactions")
-        raise HTTPException(status_code=500, detail="Failed to generate demo transactions") from exc
 
 
 @router.post("/import/{user_id}", response_model=ImportResult)
-async def import_transactions(user_id: str, file: UploadFile = File(...), skip_duplicates: bool = True) -> ImportResult:
+async def import_transactions(
+    user_id: str,
+    file: UploadFile = File(...),
+    skip_duplicates: bool = True,
+    auto_categorize: bool = True,
+) -> ImportResult:
     if not file.filename.lower().endswith(('.csv', '.xlsx', '.xls')):
         raise HTTPException(status_code=400, detail="Only CSV and Excel files are supported")
 
@@ -107,6 +115,16 @@ async def import_transactions(user_id: str, file: UploadFile = File(...), skip_d
 
     successful_imports = 0
     failed_imports = 0
+
+    ai_updates = {}
+
+    if auto_categorize and unique_transactions:
+        try:
+            ai_updates = await enrich_transactions_with_ai(unique_transactions)
+            if ai_updates:
+                logger.info("AI categorized %s transactions via OpenRouter", len(ai_updates))
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.warning("AI categorization skipped due to error: %s", exc)
 
     try:
         if unique_transactions:
