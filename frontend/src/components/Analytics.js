@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -84,6 +84,114 @@ const Analytics = ({ user, onLogout }) => {
       'from-green-500 to-green-600'
     ];
     return colors[index] || 'from-slate-500 to-slate-600';
+  };
+
+  // Interactive inline SVG line chart (no external deps)
+  const LineChart = ({ data = [], height = 160 }) => {
+    const [hoverIndex, setHoverIndex] = useState(null);
+    const [tooltip, setTooltip] = useState({ visible: false, x: 0, y: 0 });
+    const containerRef = useRef(null);
+
+    if (!data || data.length === 0) return <div className="text-sm text-slate-500">No trend data</div>;
+
+    const points = data.map(d => d.amount);
+    const max = Math.max(...points);
+    const min = Math.min(...points);
+    const range = Math.max(1, max - min);
+
+    const padding = 20;
+    const w = Math.max(300, data.length * 36);
+    const h = height;
+    const stepX = (w - padding * 2) / Math.max(1, data.length - 1);
+
+    const xy = data.map((d, i) => {
+      const x = padding + i * stepX;
+      const y = padding + ((max - d.amount) / range) * (h - padding * 2);
+      return { x, y, label: d.date, value: d.amount };
+    });
+
+    const pathD = xy.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+    const areaD = `${xy.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')} L ${xy[xy.length - 1].x} ${h - padding} L ${xy[0].x} ${h - padding} Z`;
+
+    const handleMouseMove = (e) => {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const clientX = e.clientX;
+      const x = clientX - rect.left;
+      const ratio = (x - (rect.width * (padding / w))) / (rect.width - rect.width * (padding * 2 / w));
+      const idx = Math.round(ratio * (data.length - 1));
+      const clamped = Math.max(0, Math.min(data.length - 1, idx));
+      setHoverIndex(clamped);
+      const p = xy[clamped];
+      setTooltip({ visible: true, x: p.x, y: p.y });
+    };
+
+    const handleMouseLeave = () => {
+      setHoverIndex(null);
+      setTooltip({ visible: false, x: 0, y: 0 });
+    };
+
+    return (
+      <div className="w-full overflow-x-auto relative" ref={containerRef}>
+        <svg
+          viewBox={`0 0 ${w} ${h}`}
+          className="w-full"
+          preserveAspectRatio="xMinYMin meet"
+          onMouseMove={handleMouseMove}
+          onMouseLeave={handleMouseLeave}
+        >
+          <defs>
+            <linearGradient id="trendGrad" x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0%" stopColor="#60a5fa" stopOpacity="0.9" />
+              <stop offset="100%" stopColor="#a78bfa" stopOpacity="0.1" />
+            </linearGradient>
+          </defs>
+
+          {/* area */}
+          <path d={areaD} fill="url(#trendGrad)" stroke="none" />
+
+          {/* line */}
+          <path d={pathD} fill="none" stroke="#4f46e5" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+
+          {/* vertical hover line + highlight */}
+          {hoverIndex !== null && (
+            <g>
+              <line x1={xy[hoverIndex].x} x2={xy[hoverIndex].x} y1={padding} y2={h - padding} stroke="#a78bfa" strokeWidth={1} strokeDasharray="4 4" />
+              <circle cx={xy[hoverIndex].x} cy={xy[hoverIndex].y} r={5} fill="#fff" stroke="#4f46e5" strokeWidth={2} />
+            </g>
+          )}
+
+          {/* points (reduce DOM by small circles) */}
+          {xy.map((p, i) => (
+            <circle key={i} cx={p.x} cy={p.y} r={2.5} fill="#4f46e5" />
+          ))}
+        </svg>
+
+        {/* Tooltip positioned using percentage so it scales with responsive SVG */}
+        {tooltip.visible && (
+          <div
+            className="absolute -translate-x-1/2 bg-white border rounded shadow px-2 py-1 text-xs pointer-events-none"
+            style={{ left: `${(tooltip.x / w) * 100}%`, top: `${(tooltip.y / h) * 100}%`, transform: 'translate(-50%, -120%)' }}
+          >
+            <div className="font-medium text-slate-900">₹{xy[hoverIndex].value.toLocaleString()}</div>
+            <div className="text-slate-500">{new Date(xy[hoverIndex].label).toLocaleDateString('en-IN')}</div>
+          </div>
+        )}
+
+        {/* Date labels aligned under each data point using percentage left */}
+        <div className="relative mt-2 h-6">
+          {xy.map((p, i) => (
+            <div
+              key={i}
+              className="absolute text-xs text-slate-500"
+              style={{ left: `${(p.x / w) * 100}%`, transform: 'translateX(-50%)' }}
+              title={new Date(p.label).toLocaleDateString()}
+            >
+              {new Date(p.label).getDate()}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
   };
 
   if (loading) {
@@ -272,24 +380,8 @@ const Analytics = ({ user, onLogout }) => {
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div className="h-64 flex items-end justify-between space-x-1">
-                      {trends.trends.slice(-14).map((day, index) => {
-                        const maxAmount = Math.max(...trends.trends.map(t => t.amount));
-                        const height = maxAmount > 0 ? (day.amount / maxAmount) * 100 : 0;
-                        
-                        return (
-                          <div key={index} className="flex-1 flex flex-col items-center" data-testid={`trend-bar-${index}`}>
-                            <div 
-                              className="w-full bg-gradient-to-t from-blue-600 to-blue-400 rounded-t transition-all duration-500 hover:from-blue-700 hover:to-blue-500 cursor-pointer"
-                              style={{ height: `${height}%` }}
-                              title={`${day.date}: ₹${day.amount}`}
-                            ></div>
-                            <div className="text-xs text-slate-600 mt-2 transform -rotate-45 origin-center">
-                              {new Date(day.date).getDate()}
-                            </div>
-                          </div>
-                        );
-                      })}
+                    <div>
+                      <LineChart data={trends.trends.slice(-14)} height={200} />
                     </div>
                     <div className="mt-4 p-4 bg-slate-50 rounded-lg">
                       <div className="flex items-center justify-between text-sm">
