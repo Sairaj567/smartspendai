@@ -17,6 +17,20 @@ SmartSpendAI is a personal finance assistant that combines transaction tracking,
 - **Frontend:** React 19 + Tailwind CSS + Lucide icons
 - **Tooling:** CRACO, Axios, dotenv, httpx for testing
 
+## Backend Architecture
+
+The FastAPI service is split into focused modules inside `backend/app`:
+
+- `app/main.py` – App factory that wires middleware, routers, and lifecycle events.
+- `app/config.py` – Environment loading and shared logging configuration.
+- `app/database.py` – Lazy MongoDB client management with graceful shutdown handling.
+- `app/models.py` – Pydantic schemas shared across routes.
+- `app/services/` – Business logic helpers (analytics, insights, mock data generators).
+- `app/routes/` – Feature-specific routers for transactions, analytics, AI insights, and payments.
+- `app/utils.py` – CSV parsing, Mongo document serialization, and categorization helpers.
+
+`backend/server.py` now simply instantiates the app via `create_app()`, making it easier to test and extend.
+
 ## Prerequisites
 
 - Python 3.11+ (tested with 3.13)
