@@ -71,6 +71,12 @@ You can validate the importer without running the server by leveraging FastAPI's
 python -c "import os, sys, json; os.chdir('c:/Users/saira/smartspendai'); sys.path.append('backend'); from fastapi.testclient import TestClient; import server; client = TestClient(server.app); files={'file': ('test_transactions.csv', open('test_transactions.csv','rb'), 'text/csv')}; response = client.post('/api/transactions/import/test_user', files=files); print(json.dumps(response.json(), indent=2))"
 ```
 
+Or run the automated pytest that exercises the same workflow end-to-end:
+
+```powershell
+python -m pytest tests/test_import_transactions.py
+```
+
 ## Useful Scripts
 
 - `test_import.py` – Convenience script that posts `test_transactions.csv` to the running backend.
