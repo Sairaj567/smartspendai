@@ -5,6 +5,8 @@ from unittest.mock import AsyncMock
 
 from backend.app.models import Transaction, TransactionCreate
 from backend.app.routes import transactions as transactions_route
+from backend.app.services import insights as insights_service
+from backend.app.services import openrouter_classifier
 
 
 def test_create_transaction_uses_ai_classification(monkeypatch):
@@ -100,5 +102,75 @@ def test_import_transactions_enriches_categories(monkeypatch):
         assert result.imported_transactions[0].category == "Travel"
         assert inserted_documents
         assert inserted_documents[0]["category"] == "Travel"
+
+    asyncio.run(run_test())
+
+
+def test_enrich_transactions_with_ai_batches(monkeypatch):
+    async def run_test():
+        monkeypatch.setattr(openrouter_classifier, "openrouter_available", lambda: True)
+
+        captured_batches = []
+
+        async def fake_bulk(entries, *, batch_size=25):
+            captured_batches.append((len(entries), batch_size))
+            return {entry["id"]: "Shopping" for entry in entries}
+
+        monkeypatch.setattr(openrouter_classifier, "classify_transactions_via_openrouter_bulk", fake_bulk)
+
+        transactions = [
+            Transaction(
+                user_id="user789",
+                amount=100 + index,
+                category="Others",
+                description=f"Purchase {index}",
+                merchant="Test Store",
+                date=datetime.now(timezone.utc),
+                type="expense",
+                payment_method="UPI",
+            )
+            for index in range(30)
+        ]
+
+        updated = await openrouter_classifier.enrich_transactions_with_ai(transactions, allow_override=True)
+
+        assert captured_batches, "Bulk classifier was not invoked"
+        batch_lengths = {length for length, _ in captured_batches}
+        assert batch_lengths == {30}
+        assert all(tx.category == "Shopping" for tx in transactions)
+        assert len(updated) == len(transactions)
+
+    asyncio.run(run_test())
+
+
+def test_generate_spending_insights_includes_emergency(monkeypatch):
+    async def run_test():
+        monkeypatch.setattr(insights_service, "openrouter_available", lambda: False)
+
+        summary = {
+            "total_expenses": 60000,
+            "total_income": 90000,
+            "net_savings": 30000,
+            "monthly_savings": 10000,
+            "transaction_count": 12,
+            "top_categories": [],
+            "category_breakdown": {},
+            "invested_amount": 5000,
+            "investment_transaction_count": 1,
+            "investment_category": None,
+            "emergency_fund_target": 360000,
+            "emergency_monthly_contribution": 60000,
+        }
+        trends = {"average_daily_spending": 2000, "trends": []}
+
+        insights = await insights_service.generate_spending_insights(
+            summary,
+            trends,
+            user_id="user123",
+            timeframe="3_months",
+            timeframe_label="Last 3 Months",
+        )
+
+        assert any("Emergency" in insight["title"] for insight in insights)
 
     asyncio.run(run_test())

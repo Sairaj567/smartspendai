@@ -97,6 +97,9 @@ def test_get_spending_summary_respects_days(monkeypatch):
     assert result["total_expenses"] == 1000
     assert result["total_income"] == 500
     assert result["transaction_count"] == 2
+    assert result["monthly_savings"] == 0
+    assert result["emergency_fund_target"] == 6000
+    assert result["emergency_monthly_contribution"] == 1000
 
 
 def test_get_spending_summary_supports_year_range(monkeypatch):
@@ -114,6 +117,9 @@ def test_get_spending_summary_supports_year_range(monkeypatch):
     assert result["total_expenses"] == 2100
     assert result["total_income"] == 700
     assert result["transaction_count"] == 3
+    assert "monthly_savings" in result
+    assert result["monthly_savings"] == 0
+    assert result["emergency_fund_target"] > 0
 
 
 def test_get_spending_summary_rejects_invalid_days():

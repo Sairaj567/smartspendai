@@ -40,6 +40,12 @@ class Settings:
         except (TypeError, ValueError):
             self.openrouter_timeout = 30.0
 
+        emergency_fund_multiplier_raw = os.environ.get('EMERGENCY_FUND_MULTIPLIER', '6')
+        try:
+            self.emergency_fund_multiplier: float = max(0.0, float(emergency_fund_multiplier_raw))
+        except (TypeError, ValueError):
+            self.emergency_fund_multiplier = 6.0
+
     @property
     def cors_origins(self) -> List[str]:
         return [origin.strip() for origin in self.allowed_origins_raw.split(',') if origin]

@@ -19,12 +19,14 @@ async def get_spending_summary(user_id: str, days: int = 30, timeframe: Optional
         window = resolve_timeframe_window(timeframe)
         window_start = window["start"]
         window_end = window["end"]
+        window_days = window["days"]
     else:
         if days <= 0:
             raise HTTPException(status_code=400, detail="days must be a positive integer")
 
         window_end = datetime.now(timezone.utc)
         window_start = window_end - timedelta(days=days)
+        window_days = days
 
     window_end = window_end if timeframe else window_end
 
@@ -38,7 +40,7 @@ async def get_spending_summary(user_id: str, days: int = 30, timeframe: Optional
         logger.exception("Database error in get_spending_summary")
         raise HTTPException(status_code=500, detail="Failed to fetch spending summary") from exc
 
-    return aggregate_spending_summary(parsed_transactions)
+    return aggregate_spending_summary(parsed_transactions, window_days=window_days)
 
 
 @router.get("/spending-trends/{user_id}")

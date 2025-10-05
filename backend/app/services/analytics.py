@@ -1,10 +1,17 @@
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
+from ..config import get_settings
 from ..utils import normalize_investment_category
 
+settings = get_settings()
 
-def aggregate_spending_summary(transactions: List[Dict[str, Any]]) -> Dict[str, Any]:
+
+def aggregate_spending_summary(
+    transactions: List[Dict[str, Any]],
+    *,
+    window_days: Optional[int] = None,
+) -> Dict[str, Any]:
     def _resolved_category(tx: Dict[str, Any]) -> str:
         return normalize_investment_category(
             tx.get('category'),
@@ -22,6 +29,28 @@ def aggregate_spending_summary(transactions: List[Dict[str, Any]]) -> Dict[str, 
     invested_amount = sum(tx['amount'] for tx in transactions if _is_investment(tx))
     investment_transactions = sum(1 for tx in transactions if _is_investment(tx))
 
+    if window_days is None:
+        if transactions:
+            dates = [tx['date'] for tx in transactions if isinstance(tx.get('date'), datetime)]
+            if dates:
+                min_date = min(dates)
+                max_date = max(dates)
+                window_days = max(1, (max_date.date() - min_date.date()).days + 1)
+        if window_days is None:
+            window_days = 30
+
+    months_in_window = max(1.0, window_days / 30.0)
+    avg_monthly_expenses = total_expenses / months_in_window if total_expenses else 0
+    net_savings = total_income - total_expenses
+    monthly_savings = max(0.0, net_savings / months_in_window)
+    emergency_multiplier = max(0.0, getattr(settings, 'emergency_fund_multiplier', 6.0))
+    emergency_fund_target = (
+        avg_monthly_expenses * emergency_multiplier if avg_monthly_expenses and emergency_multiplier > 0 else 0
+    )
+    emergency_monthly_contribution = (
+        emergency_fund_target / emergency_multiplier if emergency_fund_target and emergency_multiplier > 0 else 0
+    )
+
     category_spending: Dict[str, float] = {}
     for tx in transactions:
         category = _resolved_category(tx)
@@ -38,7 +67,8 @@ def aggregate_spending_summary(transactions: List[Dict[str, Any]]) -> Dict[str, 
     return {
         "total_expenses": round(total_expenses, 2),
         "total_income": round(total_income, 2),
-        "net_savings": round(total_income - total_expenses, 2),
+        "net_savings": round(net_savings, 2),
+        "monthly_savings": round(monthly_savings, 2),
         "transaction_count": len(transactions),
         "top_categories": [
             {
@@ -51,6 +81,8 @@ def aggregate_spending_summary(transactions: List[Dict[str, Any]]) -> Dict[str, 
         "category_breakdown": {cat: round(amount, 2) for cat, amount in category_spending.items()},
         "invested_amount": round(invested_amount, 2),
         "investment_transaction_count": investment_transactions,
+        "emergency_fund_target": round(emergency_fund_target, 2),
+        "emergency_monthly_contribution": round(emergency_monthly_contribution, 2),
         "investment_category": {
             "category": "Investments",
             "amount": round(invested_amount, 2),

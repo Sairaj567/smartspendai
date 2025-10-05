@@ -1,9 +1,9 @@
 import csv
 import io
+import re
 from calendar import monthrange
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Tuple
-
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 from .config import logger
 from .models import Transaction
 
@@ -111,43 +111,88 @@ def parse_date_string(date_str: str) -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _extract_tokens(*values: str) -> Set[str]:
+    tokens: Set[str] = set()
+    for value in values:
+        if not value:
+            continue
+        for token in re.split(r'[^a-z0-9]+', value):
+            token = token.strip()
+            if token:
+                tokens.add(token)
+    return tokens
+
+
+def _keyword_hit(
+    keywords: Iterable[str],
+    *,
+    description_lower: str,
+    merchant_lower: str,
+    tokens: Set[str],
+) -> bool:
+    for keyword in keywords:
+        keyword_lower = keyword.lower()
+        if keyword_lower in description_lower or keyword_lower in merchant_lower:
+            return True
+        if keyword_lower in tokens:
+            return True
+    return False
+
+
 def categorize_transaction(description: str, merchant: str) -> str:
     description_lower = description.lower()
     merchant_lower = merchant.lower()
+    tokens = _extract_tokens(description_lower, merchant_lower)
 
     if is_trading_platform_transaction(description, merchant):
         return 'Investments'
 
-    food_keywords = ['zomato', 'swiggy', 'restaurant', 'food', 'cafe', 'pizza', 'burger', 'mcdonald', 'kfc', 'dominos', 'starbucks']
-    if any(keyword in description_lower or keyword in merchant_lower for keyword in food_keywords):
+    food_keywords = {
+        'zomato', 'swiggy', 'restaurant', 'food', 'cafe', 'pizza', 'burger', 'mcdonald', 'kfc',
+        'dominos', 'starbucks', 'momo', 'momos', 'biryani', 'shawarma', 'chai', 'tea', 'coffee',
+        'juice', 'bakery', 'canteen', 'idli', 'dosa', 'thali', 'roll', 'rolls', 'tiffin', 'snack',
+        'snacks', 'lunch', 'dinner', 'breakfast', 'beverage', 'beverages', 'cafeteria', 'eatery',
+        'kathi', 'samosa', 'pani puri', 'pizzahut', 'subway', 'burgerking', 'barbeque nation',
+    }
+    if _keyword_hit(food_keywords, description_lower=description_lower, merchant_lower=merchant_lower, tokens=tokens):
         return 'Food & Dining'
 
-    transport_keywords = ['uber', 'ola', 'metro', 'bus', 'taxi', 'fuel', 'petrol', 'diesel', 'transport']
-    if any(keyword in description_lower or keyword in merchant_lower for keyword in transport_keywords):
+    groceries_keywords = {
+        'grocery', 'groceries', 'supermart', 'supermarket', 'hypermarket', 'kirana', 'dairy',
+        'milk', 'vegetable', 'vegetables', 'veggies', 'fruit', 'fruits', 'produce', 'fresh', 'greens',
+        'meat', 'butcher', 'fish', 'poultry', 'provision', 'ration', 'bazaar', 'sabka bazaar',
+        'organic', 'sabzi', 'mandi', 'bigbasket', 'big bazaar', 'bigbazaar', 'dmart', 'd-mart',
+        'reliance fresh', 'spencers', 'more supermarket', 'nature basket', 'namdharis',
+    }
+    if _keyword_hit(groceries_keywords, description_lower=description_lower, merchant_lower=merchant_lower, tokens=tokens):
+        return 'Groceries'
+
+    transport_keywords = {'uber', 'ola', 'metro', 'bus', 'taxi', 'fuel', 'petrol', 'diesel', 'transport', 'rapido', 'ola cab', 'cab'}
+    if _keyword_hit(transport_keywords, description_lower=description_lower, merchant_lower=merchant_lower, tokens=tokens):
         return 'Transportation'
 
-    shopping_keywords = ['amazon', 'flipkart', 'myntra', 'shopping', 'mall', 'store', 'purchase']
-    if any(keyword in description_lower or keyword in merchant_lower for keyword in shopping_keywords):
+    shopping_keywords = {'amazon', 'flipkart', 'myntra', 'shopping', 'mall', 'store', 'purchase', 'ajio', 'nykaa', 'snapdeal', 'decathlon'}
+    if _keyword_hit(shopping_keywords, description_lower=description_lower, merchant_lower=merchant_lower, tokens=tokens):
         return 'Shopping'
 
-    entertainment_keywords = ['netflix', 'spotify', 'movie', 'cinema', 'entertainment', 'bookmyshow', 'game']
-    if any(keyword in description_lower or keyword in merchant_lower for keyword in entertainment_keywords):
+    entertainment_keywords = {'netflix', 'spotify', 'movie', 'cinema', 'entertainment', 'bookmyshow', 'game', 'games', 'gaming', 'hotstar', 'sony liv'}
+    if _keyword_hit(entertainment_keywords, description_lower=description_lower, merchant_lower=merchant_lower, tokens=tokens):
         return 'Entertainment'
 
-    utility_keywords = ['electricity', 'water', 'gas', 'internet', 'mobile', 'recharge', 'bill', 'utility']
-    if any(keyword in description_lower or keyword in merchant_lower for keyword in utility_keywords):
+    utility_keywords = {'electricity', 'water', 'gas', 'internet', 'mobile', 'recharge', 'bill', 'utility', 'broadband', 'dth', 'postpaid', 'prepaid'}
+    if _keyword_hit(utility_keywords, description_lower=description_lower, merchant_lower=merchant_lower, tokens=tokens):
         return 'Bills & Utilities'
 
-    health_keywords = ['hospital', 'pharmacy', 'doctor', 'medical', 'health', 'medicine', 'clinic']
-    if any(keyword in description_lower or keyword in merchant_lower for keyword in health_keywords):
+    health_keywords = {'hospital', 'pharmacy', 'doctor', 'medical', 'health', 'medicine', 'clinic', 'medicare', 'chemist', 'diagnostic', 'lab'}
+    if _keyword_hit(health_keywords, description_lower=description_lower, merchant_lower=merchant_lower, tokens=tokens):
         return 'Healthcare'
 
-    investment_keywords = [
+    investment_keywords = {
         'investment', 'sip', 'mutual fund', 'mutualfund', 'stock', 'stocks', 'equity',
-        'portfolio', 'brokerage', 'demat', 'lic policy', 'ppf', 'nps', 'zerodha', 'groww',
+        'portfolio', 'brokerage', 'demat', 'lic', 'lic policy', 'ppf', 'nps', 'zerodha', 'groww',
         'upstox', 'paytm money', 'icici direct', 'hdfc securities', 'iccl groww'
-    ]
-    if any(keyword in description_lower or keyword in merchant_lower for keyword in investment_keywords):
+    }
+    if _keyword_hit(investment_keywords, description_lower=description_lower, merchant_lower=merchant_lower, tokens=tokens):
         return 'Investments'
 
     return 'Others'

@@ -9,6 +9,7 @@ import {
   PieChart, 
   Target, 
   Zap,
+  Shield,
   ArrowUpRight,
   ArrowDownRight,
   Brain,
@@ -24,8 +25,21 @@ import {
 import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
+const resolveApiBase = () => {
+  const envBase = process.env.REACT_APP_BACKEND_URL;
+  if (envBase) {
+    return `${envBase.replace(/\/$/, '')}/api`;
+  }
+
+  if (typeof window !== 'undefined' && window.location) {
+    const { protocol } = window.location;
+    return `${protocol}//localhost:8000/api`;
+  }
+
+  return 'http://localhost:8000/api';
+};
+
+const API = resolveApiBase();
 
 const Dashboard = ({ user, onLogout }) => {
   const navigate = useNavigate();
@@ -41,6 +55,14 @@ const Dashboard = ({ user, onLogout }) => {
   }, [user]);
 
   const loadDashboardData = async () => {
+    if (!user?.id) {
+      setSummary(null);
+      setTrends(null);
+      setInsights([]);
+      setLoading(false);
+      return;
+    }
+
     try {
       // First, generate demo data if user doesn't have any
       setGeneratingData(true);
@@ -57,7 +79,12 @@ const Dashboard = ({ user, onLogout }) => {
       
       // Load recent insights
       const insightsRes = await axios.get(`${API}/ai/insights/${user.id}`);
-      setInsights(insightsRes.data.slice(0, 3)); // Top 3 insights
+      const insightsData = Array.isArray(insightsRes.data)
+        ? insightsRes.data
+        : Array.isArray(insightsRes.data?.insights)
+          ? insightsRes.data.insights
+          : [];
+      setInsights(insightsData.slice(0, 3)); // Top 3 insights
       
     } catch (error) {
       console.error('Error loading dashboard data:', error);
@@ -73,7 +100,12 @@ const Dashboard = ({ user, onLogout }) => {
       
       // Reload insights
       const insightsRes = await axios.get(`${API}/ai/insights/${user.id}`);
-      setInsights(insightsRes.data.slice(0, 3));
+      const insightsData = Array.isArray(insightsRes.data)
+        ? insightsRes.data
+        : Array.isArray(insightsRes.data?.insights)
+          ? insightsRes.data.insights
+          : [];
+      setInsights(insightsData.slice(0, 3));
       
     } catch (error) {
       console.error('Error generating AI insights:', error);
@@ -197,8 +229,8 @@ const Dashboard = ({ user, onLogout }) => {
 
             {/* Summary Cards */}
             {summary && (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
-                <Card className="border-0 shadow-lg hover:shadow-xl transition-shadow card-hover" data-testid="total-expenses-card">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-6 mb-8">
+                <Card className="border-0 shadow-lg hover:shadow-xl transition-shadow card-hover xl:col-span-2" data-testid="total-expenses-card">
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle className="text-sm font-medium text-slate-600">Total Expenses</CardTitle>
                     <TrendingDown className="h-4 w-4 text-red-600" />
@@ -209,7 +241,7 @@ const Dashboard = ({ user, onLogout }) => {
                   </CardContent>
                 </Card>
 
-                <Card className="border-0 shadow-lg hover:shadow-xl transition-shadow card-hover" data-testid="total-income-card">
+                <Card className="border-0 shadow-lg hover:shadow-xl transition-shadow card-hover xl:col-span-2" data-testid="total-income-card">
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle className="text-sm font-medium text-slate-600">Total Income</CardTitle>
                     <TrendingUp className="h-4 w-4 text-green-600" />
@@ -220,7 +252,7 @@ const Dashboard = ({ user, onLogout }) => {
                   </CardContent>
                 </Card>
 
-                <Card className="border-0 shadow-lg hover:shadow-xl transition-shadow card-hover" data-testid="net-savings-card">
+                <Card className="border-0 shadow-lg hover:shadow-xl transition-shadow card-hover xl:col-span-2" data-testid="net-savings-card">
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle className="text-sm font-medium text-slate-600">Net Savings</CardTitle>
                     <Target className="h-4 w-4 text-blue-600" />
@@ -231,13 +263,14 @@ const Dashboard = ({ user, onLogout }) => {
                     }`}>
                       ₹{summary.net_savings.toLocaleString()}
                     </div>
-                    <p className="text-xs text-slate-600 mt-1">
-                      {summary.net_savings >= 0 ? 'Great job!' : 'Consider budgeting'}
-                    </p>
+                    <div className="text-xs text-slate-600 mt-2 space-y-1">
+                      <p>Monthly savings capacity: ₹{Number(summary.monthly_savings ?? 0).toLocaleString()}</p>
+                      <p>Emergency monthly goal: ₹{Number(summary.emergency_monthly_contribution ?? 0).toLocaleString()}</p>
+                    </div>
                   </CardContent>
                 </Card>
 
-                <Card className="border-0 shadow-lg hover:shadow-xl transition-shadow card-hover" data-testid="invested-amount-card">
+                <Card className="border-0 shadow-lg hover:shadow-xl transition-shadow card-hover xl:col-span-2" data-testid="invested-amount-card">
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle className="text-sm font-medium text-slate-600">Invested Amount</CardTitle>
                     <DollarSign className="h-4 w-4 text-emerald-600" />
@@ -250,7 +283,20 @@ const Dashboard = ({ user, onLogout }) => {
                   </CardContent>
                 </Card>
 
-                <Card className="border-0 shadow-lg hover:shadow-xl transition-shadow card-hover" data-testid="transactions-count-card">
+                <Card className="border-0 shadow-lg hover:shadow-xl transition-shadow card-hover xl:col-span-2" data-testid="emergency-fund-card">
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium text-slate-600">Emergency Fund Goal</CardTitle>
+                    <Shield className="h-4 w-4 text-orange-600" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold text-slate-900">₹{Number(summary.emergency_fund_target ?? 0).toLocaleString()}</div>
+                    <p className="text-xs text-slate-600 mt-1">
+                      Monthly contribution target: ₹{Number(summary.emergency_monthly_contribution ?? 0).toLocaleString()}
+                    </p>
+                  </CardContent>
+                </Card>
+
+                <Card className="border-0 shadow-lg hover:shadow-xl transition-shadow card-hover xl:col-span-2" data-testid="transactions-count-card">
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle className="text-sm font-medium text-slate-600">Transactions</CardTitle>
                     <Receipt className="h-4 w-4 text-purple-600" />

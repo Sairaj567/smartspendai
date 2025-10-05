@@ -56,9 +56,11 @@ OPENROUTER_API_KEY=your-openrouter-key
 OPENROUTER_MODEL=openai/gpt-4o-mini
 OPENROUTER_APP_URL=http://localhost:3000
 OPENROUTER_APP_NAME=SmartSpendAI
+EMERGENCY_FUND_MULTIPLIER=6
 ```
 
 > `OPENROUTER_API_KEY` is optional—when omitted, the importer falls back to rule-based categorization. The additional values let OpenRouter attribute traffic from your app and may be left at their defaults in development.
+> `EMERGENCY_FUND_MULTIPLIER` adjusts the emergency fund target (in months of average expenses). Set it to `3` or `4` if you prefer a smaller cushion.
 
 ### 2. Frontend
 

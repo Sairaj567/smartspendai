@@ -275,6 +275,28 @@ def _generate_rule_based_insights(summary: Dict, metrics: Dict[str, Any]) -> Lis
                 "category": "optimization"
             })
 
+    emergency_target = avg_monthly_expenses * 6 if avg_monthly_expenses else 0
+    emergency_monthly_goal = emergency_target / 6 if emergency_target else 0
+
+    if emergency_target:
+        emergency_examples = "job loss, medical treatment, or urgent home/vehicle repairs"
+        monthly_goal_note = (
+            f"Setting aside ₹{emergency_monthly_goal:,.0f} each month will build this safety net in six months."
+            if emergency_monthly_goal
+            else "Set aside a consistent amount each month to build this safety net."
+        )
+        insights.append({
+            "title": f"Build a ₹{emergency_target:,.0f} Emergency Cushion",
+            "description": (
+                f"Your core expenses suggest keeping at least ₹{emergency_target:,.0f} handy for emergencies such as {emergency_examples}."
+            ),
+            "recommendation": (
+                f"Keep this fund in a liquid account (high-yield savings or money-market). {monthly_goal_note}"
+            ),
+            "priority": "high" if savings_rate < 20 else "medium",
+            "category": "savings",
+        })
+
     if monthly_surplus >= 1000:
         sip_base = min(
             monthly_surplus * 0.4,
@@ -282,11 +304,10 @@ def _generate_rule_based_insights(summary: Dict, metrics: Dict[str, Any]) -> Lis
         )
         sip_cap = _round_to_step(monthly_surplus * 0.8, 500)
         sip_amount = min(_round_to_step(sip_base, 500), sip_cap, 25000)
-        emergency_target = avg_monthly_expenses * 6 if avg_monthly_expenses else 0
         months_to_emergency = emergency_target / sip_amount if sip_amount > 0 else None
         emergency_note = (
-            f"Build a 6-month safety net (~₹{emergency_target:,.0f}) in a high-yield savings account "
-            "like AU Small Finance, IDFC FIRST, or State Bank's Digital FD."
+            f"Build a 6-month safety net (~₹{emergency_target:,.0f}) covering job loss, hospital bills, or urgent repairs. "
+            "Park it in a high-yield savings account like AU Small Finance, IDFC FIRST, or SBI Digital FD."
             if emergency_target
             else "Use a high-yield savings account to build an emergency fund."
         )

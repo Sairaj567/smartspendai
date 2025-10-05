@@ -89,16 +89,28 @@ async def create_ai_insights(user_id: str, timeframe: str = DEFAULT_TIMEFRAME):
 async def get_ai_insights(user_id: str, limit: int = 10, timeframe: Optional[str] = None):
     try:
         window = resolve_timeframe_window(timeframe or DEFAULT_TIMEFRAME)
-        insights = await db.spending_insights.find({
+        insights_cursor = db.spending_insights.find({
             "user_id": user_id,
             "timeframe": window["key"]
-        }).sort("created_at", -1).limit(limit).to_list(length=None)
+        }).sort("created_at", -1).limit(limit)
+        insights = await insights_cursor.to_list(length=None)
 
         if not insights:
-            insights = await db.spending_insights.find({
-                "user_id": user_id,
-                "timeframe": {"$exists": False}
-            }).sort("created_at", -1).limit(limit).to_list(length=None)
+            fallback_cursor = db.spending_insights.find({
+                "user_id": user_id
+            }).sort("created_at", -1).limit(limit)
+            fallback_insights = await fallback_cursor.to_list(length=None)
+
+            if fallback_insights:
+                latest_timeframe = fallback_insights[0].get("timeframe")
+                if latest_timeframe:
+                    insights = [
+                        insight
+                        for insight in fallback_insights
+                        if insight.get("timeframe") == latest_timeframe
+                    ][:limit]
+                else:
+                    insights = fallback_insights[:limit]
 
         return [SpendingInsight(**parse_from_mongo(insight)) for insight in insights]
     except Exception as exc:

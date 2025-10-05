@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Union
 
 import io
@@ -28,6 +28,145 @@ from ..utils import (
 router = APIRouter(prefix="/transactions", tags=["transactions"])
 
 db = get_database()
+
+
+_DEMO_TRANSACTION_BLUEPRINT = [
+    {
+        "description": "Monthly Salary Credit",
+        "merchant": "Acme Corp Payroll",
+        "amount": 125000.0,
+        "type": "income",
+        "category": "Income",
+        "payment_method": "Bank Transfer",
+        "offset_days": 3,
+    },
+    {
+        "description": "Flat Rent - Koramangala",
+        "merchant": "Urban Homes",
+        "amount": 32000.0,
+        "type": "expense",
+        "category": "Rent",
+        "payment_method": "UPI",
+        "offset_days": 2,
+    },
+    {
+        "description": "Systematic Investment Plan",
+        "merchant": "Groww Investments",
+        "amount": 15000.0,
+        "type": "expense",
+        "category": "Investments",
+        "payment_method": "Bank Transfer",
+        "offset_days": 1,
+    },
+    {
+        "description": "Weekend Groceries",
+        "merchant": "Big Bazaar",
+        "amount": 5400.0,
+        "type": "expense",
+        "category": "Groceries",
+        "payment_method": "UPI",
+        "offset_days": 5,
+    },
+    {
+        "description": "Daily Commute - Metro Card",
+        "merchant": "BMRCL",
+        "amount": 2400.0,
+        "type": "expense",
+        "category": "Transportation",
+        "payment_method": "UPI",
+        "offset_days": 6,
+    },
+    {
+        "description": "Friday Dinner with Friends",
+        "merchant": "Toit Brewpub",
+        "amount": 2600.0,
+        "type": "expense",
+        "category": "Food & Dining",
+        "payment_method": "Credit Card",
+        "offset_days": 7,
+    },
+    {
+        "description": "Electricity Bill - BESCOM",
+        "merchant": "BESCOM",
+        "amount": 4200.0,
+        "type": "expense",
+        "category": "Bills & Utilities",
+        "payment_method": "NetBanking",
+        "offset_days": 8,
+    },
+    {
+        "description": "Monthly Phone Bill",
+        "merchant": "Airtel",
+        "amount": 999.0,
+        "type": "expense",
+        "category": "Bills & Utilities",
+        "payment_method": "UPI",
+        "offset_days": 9,
+    },
+    {
+        "description": "Streaming Subscription Renewal",
+        "merchant": "Netflix",
+        "amount": 649.0,
+        "type": "expense",
+        "category": "Entertainment",
+        "payment_method": "Credit Card",
+        "offset_days": 10,
+    },
+    {
+        "description": "Coffee with client",
+        "merchant": "Starbucks",
+        "amount": 450.0,
+        "type": "expense",
+        "category": "Food & Dining",
+        "payment_method": "UPI",
+        "offset_days": 11,
+    },
+    {
+        "description": "Cashback Reward",
+        "merchant": "HDFC Bank",
+        "amount": 1500.0,
+        "type": "income",
+        "category": "Income",
+        "payment_method": "Bank Transfer",
+        "offset_days": 12,
+    },
+    {
+        "description": "Health Insurance Premium",
+        "merchant": "Star Health",
+        "amount": 7200.0,
+        "type": "expense",
+        "category": "Healthcare",
+        "payment_method": "UPI",
+        "offset_days": 13,
+    },
+    {
+        "description": "Weekend Getaway Booking",
+        "merchant": "Airbnb",
+        "amount": 9800.0,
+        "type": "expense",
+        "category": "Travel",
+        "payment_method": "Credit Card",
+        "offset_days": 14,
+    },
+    {
+        "description": "Quarterly Bonus",
+        "merchant": "Acme Corp Payroll",
+        "amount": 40000.0,
+        "type": "income",
+        "category": "Income",
+        "payment_method": "Bank Transfer",
+        "offset_days": 20,
+    },
+    {
+        "description": "Equity Top-up",
+        "merchant": "Zerodha Securities",
+        "amount": 10000.0,
+        "type": "expense",
+        "category": "Investments",
+        "payment_method": "NetBanking",
+        "offset_days": 22,
+    },
+]
 
 
 def _model_dump(model):
@@ -145,6 +284,62 @@ async def _execute_bulk_create(
         errors=errors,
         created_transactions=inserted_transactions[:10],
     )
+
+
+@router.post("/generate/{user_id}")
+async def generate_demo_transactions(user_id: str, overwrite: bool = False):
+    if not user_id:
+        raise HTTPException(status_code=400, detail="user_id is required")
+
+    try:
+        existing_count = await db.transactions.count_documents({"user_id": user_id})
+    except Exception as exc:  # pragma: no cover - defensive logging
+        logger.exception("Failed checking existing transactions for demo generation")
+        raise HTTPException(status_code=500, detail="Database unavailable") from exc
+
+    if existing_count and not overwrite:
+        return {
+            "created": 0,
+            "skipped": existing_count,
+            "message": "Demo data already present for user",
+            "total_transactions": existing_count,
+        }
+
+    if existing_count and overwrite:
+        try:
+            await db.transactions.delete_many({"user_id": user_id})
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.exception("Failed wiping user transactions before regeneration")
+            raise HTTPException(status_code=500, detail="Could not reset user transactions") from exc
+
+    base_date = datetime.now(timezone.utc)
+    transaction_inputs: List[TransactionCreate] = []
+
+    for index, blueprint in enumerate(_DEMO_TRANSACTION_BLUEPRINT):
+        offset_days = int(blueprint.get("offset_days", index))
+        transaction_inputs.append(TransactionCreate(
+            user_id=user_id,
+            amount=blueprint["amount"],
+            category=blueprint.get("category", "Others"),
+            description=blueprint["description"],
+            merchant=blueprint.get("merchant", "Demo Merchant"),
+            type=blueprint.get("type", "expense"),
+            payment_method=blueprint.get("payment_method", "UPI"),
+            date=base_date - timedelta(days=offset_days),
+        ))
+
+    result = await _execute_bulk_create(transaction_inputs, skip_duplicates=True)
+
+    return {
+        "created": result.created_count,
+        "skipped_duplicates": result.skipped_duplicates,
+        "failed": result.failed_count,
+        "total_requested": result.total_requested,
+        "sample_preview": [
+            _model_dump(tx)
+            for tx in result.created_transactions
+        ],
+    }
 
 
 @router.post("/", response_model=Union[Transaction, BulkTransactionResult])
